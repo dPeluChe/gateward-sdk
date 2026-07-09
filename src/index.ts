@@ -1,6 +1,11 @@
 // Browser + shared entry. Server-to-server helpers (API key, event
 // ingestion) live in the `@gateward/sdk/server` subpath.
 export { GatewardAuth, type GatewardAuthOptions } from "./auth/client.js";
+export {
+  GatewardPlatform,
+  type GatewardPlatformOptions,
+} from "./platform/client.js";
+export { type SessionOptions } from "./core/session.js";
 export { GatewardError } from "./core/errors.js";
 export {
   MemoryStorage,
