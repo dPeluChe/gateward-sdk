@@ -41,6 +41,12 @@ await auth.logout(); // revoca en el server y limpia el storage (best-effort)
 `GatewardAuth` guarda el par de tokens en un `TokenStorage` pluggable
 (`MemoryStorage` por defecto, `createWebStorage()` para `localStorage`, o el tuyo).
 
+Manda automáticamente un **`X-Gateward-Device-Id`** estable (generado y persistido
+en `localStorage` en el browser) para que el Core reconozca el mismo dispositivo entre
+sesiones. Pasá `deviceId: "..."` para controlarlo, o `deviceId: false` para desactivarlo.
+El Core, además, captura IP real (behind proxy) + navegador/OS del User-Agent en cada
+login/refresh.
+
 ## Server-to-server (API key)
 
 ```ts

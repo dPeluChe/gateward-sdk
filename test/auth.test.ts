@@ -33,6 +33,34 @@ describe("GatewardAuth", () => {
     expect(await auth.getAccessToken()).toBe(set.accessToken);
   });
 
+  it("sends an explicit device id as X-Gateward-Device-Id", async () => {
+    const { fetch, calls } = stubFetch([tokenResponse(future())]);
+    const auth = new GatewardAuth({
+      baseUrl: BASE,
+      appId: APP,
+      deviceId: "dev-fixed-1",
+      fetch,
+    });
+
+    await auth.login("a@b.co", "pw");
+
+    expect(calls[0]!.headers["x-gateward-device-id"]).toBe("dev-fixed-1");
+  });
+
+  it("omits the device id header when disabled", async () => {
+    const { fetch, calls } = stubFetch([tokenResponse(future())]);
+    const auth = new GatewardAuth({
+      baseUrl: BASE,
+      appId: APP,
+      deviceId: false,
+      fetch,
+    });
+
+    await auth.login("a@b.co", "pw");
+
+    expect(calls[0]!.headers["x-gateward-device-id"]).toBeUndefined();
+  });
+
   it("getAccessToken refreshes when the token is near expiry", async () => {
     const { fetch, calls } = stubFetch([
       tokenResponse(past()), // login → already-expired access token
