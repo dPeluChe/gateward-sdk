@@ -70,6 +70,32 @@ La verificación descarga el JWKS una vez (`/.well-known/jwks.json`), lo cachea 
 1h, igual que el `Cache-Control` del Core) y refetchea si aparece un `kid` desconocido
 (rotación de claves).
 
+## Platform admin (dashboard)
+
+Para paneles de administración: `GatewardPlatform` hace `platform-login` (no es
+app-scoped, no manda `X-Gateward-App-Id`) con refresh automático, y expone
+`authedRequest` para operar los endpoints admin/management.
+
+```ts
+import { GatewardPlatform } from "@gateward/sdk";
+
+const admin = new GatewardPlatform({ baseUrl: "https://gateward.fondor.space" });
+await admin.platformLogin("admin@org.com", "s3cret");
+
+const ecosystems = await admin.authedRequest("GET", "/v1/ecosystems");
+const users = await admin.authedRequest("GET", "/v1/admin/users", {
+  query: { limit: 50 },
+});
+const key = await admin.authedRequest("POST", "/v1/admin/api-keys", {
+  body: { ecosystem_id, identity_pool_id, app_id, email, scopes: ["events:write"] },
+});
+// … listSessions/revoke, PATCH user status, GET /v1/admin/events, etc.
+await admin.logout();
+```
+
+> El browser hablando cross-origin con el Core necesita CORS: configurá
+> `CORS_ALLOWED_ORIGINS` en el Core (HARDEN-001) con el origen del dashboard.
+
 ## Errores
 
 Toda respuesta no-2xx (o fallo de red) lanza `GatewardError` con `.status` y `.body`,
