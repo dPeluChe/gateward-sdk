@@ -6,6 +6,8 @@ export interface HttpClientOptions {
   baseUrl: string;
   /** App id sent as `X-Gateward-App-Id` on every request when set. */
   appId?: string;
+  /** Stable device id sent as `X-Gateward-Device-Id` when set. */
+  deviceId?: string;
   /** Custom fetch (tests, non-global-fetch runtimes). Defaults to `fetch`. */
   fetch?: FetchLike;
 }
@@ -30,11 +32,13 @@ export interface RequestOptions {
 export class HttpClient {
   private readonly baseUrl: string;
   private readonly appId: string | undefined;
+  private readonly deviceId: string | undefined;
   private readonly fetchImpl: FetchLike;
 
   constructor(opts: HttpClientOptions) {
     this.baseUrl = opts.baseUrl.replace(/\/+$/, "");
     this.appId = opts.appId;
+    this.deviceId = opts.deviceId;
     this.fetchImpl = opts.fetch ?? globalThis.fetch;
     if (!this.fetchImpl) {
       throw new Error(
@@ -55,6 +59,7 @@ export class HttpClient {
 
     const headers: Record<string, string> = { Accept: "application/json" };
     if (this.appId) headers["X-Gateward-App-Id"] = this.appId;
+    if (this.deviceId) headers["X-Gateward-Device-Id"] = this.deviceId;
     if (opts.bearer) headers["Authorization"] = `Bearer ${opts.bearer}`;
     if (opts.apiKey) headers["X-API-Key"] = opts.apiKey;
     if (opts.body !== undefined) headers["Content-Type"] = "application/json";

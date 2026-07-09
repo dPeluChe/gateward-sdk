@@ -14,6 +14,7 @@ export {
   type TokenSet,
 } from "./core/storage.js";
 export { HttpClient } from "./core/http.js";
+export { resolveDeviceId } from "./core/device.js";
 export {
   JwtVerifier,
   decodeClaims,

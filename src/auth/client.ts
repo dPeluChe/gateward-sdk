@@ -1,4 +1,5 @@
 import { HttpClient } from "../core/http.js";
+import { resolveDeviceId } from "../core/device.js";
 import { AuthSession, type SessionOptions } from "../core/session.js";
 import type { TokenSet } from "../core/storage.js";
 import type {
@@ -12,6 +13,10 @@ export interface GatewardAuthOptions extends SessionOptions {
   baseUrl: string;
   /** App id — sent as `X-Gateward-App-Id`, required for auth endpoints. */
   appId: string;
+  /** Stable device id (`X-Gateward-Device-Id`). Defaults to a persisted,
+   *  auto-generated id in the browser; pass one to control it. Set to `false`
+   *  to disable sending it. */
+  deviceId?: string | false;
   /** Custom fetch (defaults to global `fetch`). */
   fetch?: FetchLike;
 }
@@ -21,10 +26,13 @@ export interface GatewardAuthOptions extends SessionOptions {
  *  `X-Gateward-App-Id`. Token lifecycle comes from {@link AuthSession}. */
 export class GatewardAuth extends AuthSession {
   constructor(opts: GatewardAuthOptions) {
+    const deviceId =
+      opts.deviceId === false ? undefined : resolveDeviceId(opts.deviceId);
     super(
       new HttpClient({
         baseUrl: opts.baseUrl,
         appId: opts.appId,
+        ...(deviceId ? { deviceId } : {}),
         ...(opts.fetch ? { fetch: opts.fetch } : {}),
       }),
       opts,
