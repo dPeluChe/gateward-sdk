@@ -7,7 +7,7 @@ OpenAPI** (`GET /api-docs/openapi.json`), no a mano.
 - `@gateward/sdk` — auth de usuario (register/login/refresh automático/logout), sesiones
   propias, y verificación local de JWT (ES256 vía JWKS).
 - `@gateward/sdk/server` — server-to-server con API key (`X-API-Key`): `sendEvent`,
-  `listEvents`, y `verifyToken`.
+  `listEvents`, `getUserMetadata`/`updateUserMetadata`, y `verifyToken`.
 
 > **Alcance:** este SDK cubre la superficie de **cliente/integrador** solamente. Las
 > operaciones de **admin/control-plane** (gestión de ecosystems, usuarios, api keys, ver
@@ -73,6 +73,10 @@ await gw.sendEvent({
 });
 
 const events = await gw.listEvents({ eventType: "app.checkout.completed", limit: 20 });
+
+// Per-app user metadata (scopes users:read_app / users:write_app).
+await gw.updateUserMetadata("<USER_ID>", { tier: "gold" }); // shallow-merge
+const meta = await gw.getUserMetadata("<USER_ID>");
 
 // Verificación local del access token (ES256, sin llamar al Core).
 // audience = el app_id (o "gateward:platform" para tokens de admin).

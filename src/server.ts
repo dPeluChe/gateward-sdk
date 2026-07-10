@@ -90,6 +90,33 @@ export class GatewardServer {
     });
   }
 
+  /** Read this app's metadata for one of its users (requires `users:read_app`).
+   *  Per-app data your backend stored on the membership — Gateward stays lean,
+   *  your app owns the profile. */
+  async getUserMetadata(userId: string): Promise<Record<string, unknown>> {
+    const res = await this.http.request<{ metadata: Record<string, unknown> }>(
+      "GET",
+      `/v1/users/${userId}/metadata`,
+      { apiKey: this.apiKey },
+    );
+    return res.metadata;
+  }
+
+  /** Shallow-merge `patch` into this app's metadata for a user (requires
+   *  `users:write_app`). Existing top-level keys are preserved. Returns the
+   *  merged metadata. */
+  async updateUserMetadata(
+    userId: string,
+    patch: Record<string, unknown>,
+  ): Promise<Record<string, unknown>> {
+    const res = await this.http.request<{ metadata: Record<string, unknown> }>(
+      "PATCH",
+      `/v1/users/${userId}/metadata`,
+      { apiKey: this.apiKey, body: { metadata: patch } },
+    );
+    return res.metadata;
+  }
+
   /** Verify a Gateward access token locally (ES256 via JWKS). Pass
    *  `audience` (the app id) to bind the token to your app. Throws on any
    *  invalid/expired/wrong-audience token. */

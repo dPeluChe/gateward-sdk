@@ -471,7 +471,7 @@
         "tags": [
           "admin"
         ],
-        "summary": "OPS-001: block/unblock a user manually. Sets `account_status` to\n`blocked` (or `active` to unblock). Does NOT touch `locked_until`\n(that's the lockout system's field, auto-cleared on expiry).\nBlocking proactively revokes all active sessions — the access token\nTTL is 15 min, so this is the difference between \"eventual\" and\n\"immediate\" enforcement (CORE-006).",
+        "summary": "OPS-001 / AUDIT-STATUS-001: block, ban, or reactivate a user. `blocked`\n(temporary) and `banned` (permanent) require a `reason` (§13.4) and\nproactively revoke all active sessions — the access token TTL is 15 min,\nso this is the difference between \"eventual\" and \"immediate\" enforcement\n(CORE-006). Does NOT touch `locked_until` (the lockout system's field).",
         "operationId": "update_user_status",
         "parameters": [
           {
@@ -500,7 +500,105 @@
             "description": "Status updated"
           },
           "400": {
-            "description": "Only 'blocked' or 'active' allowed"
+            "description": "Invalid status, or missing reason for block/ban"
+          },
+          "403": {
+            "description": "Not platform admin"
+          },
+          "404": {
+            "description": "User not found"
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ]
+      }
+    },
+    "/v1/admin/users/{id}/metadata": {
+      "get": {
+        "tags": [
+          "admin"
+        ],
+        "operationId": "get_admin_metadata",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "description": "User ID",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Operator/admin annotations on the user",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/UserMetadataResponse"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Not platform admin"
+          },
+          "404": {
+            "description": "User not found"
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ]
+      },
+      "patch": {
+        "tags": [
+          "admin"
+        ],
+        "summary": "Operator annotations at the identity level — set from the dashboard when\nsomeone investigates a user and wants to record notes/tags/behavior.\nDistinct from the per-app `local_metadata` an app writes about its own user.",
+        "operationId": "patch_admin_metadata",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "description": "User ID",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/PatchMetadataRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Updated admin annotations (shallow-merged)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/UserMetadataResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "metadata must be a JSON object"
           },
           "403": {
             "description": "Not platform admin"
@@ -1412,6 +1510,109 @@
           }
         ]
       }
+    },
+    "/v1/users/{id}/metadata": {
+      "get": {
+        "tags": [
+          "users"
+        ],
+        "operationId": "get_metadata",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "description": "User ID",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "The user's per-app metadata",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/UserMetadataResponse"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Missing users:read_app scope"
+          },
+          "404": {
+            "description": "No membership in the caller's app"
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          },
+          {
+            "api_key": []
+          }
+        ]
+      },
+      "patch": {
+        "tags": [
+          "users"
+        ],
+        "operationId": "patch_metadata",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "description": "User ID",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/PatchMetadataRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Updated metadata (shallow-merged)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/UserMetadataResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "metadata must be a JSON object"
+          },
+          "403": {
+            "description": "Missing users:write_app scope"
+          },
+          "404": {
+            "description": "No membership in the caller's app"
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          },
+          {
+            "api_key": []
+          }
+        ]
+      }
     }
   },
   "components": {
@@ -1440,16 +1641,19 @@
         "required": [
           "id",
           "user_id",
-          "app_id",
           "status",
           "created_at",
           "last_seen_at"
         ],
         "properties": {
           "app_id": {
-            "type": "string",
+            "type": [
+              "string",
+              "null"
+            ],
             "format": "uuid"
           },
+          "client_info": {},
           "created_at": {
             "type": "string",
             "format": "date-time"
@@ -2122,6 +2326,17 @@
           }
         }
       },
+      "PatchMetadataRequest": {
+        "type": "object",
+        "required": [
+          "metadata"
+        ],
+        "properties": {
+          "metadata": {
+            "description": "JSON object shallow-merged into the membership's `local_metadata`."
+          }
+        }
+      },
       "RefreshRequest": {
         "type": "object",
         "required": [
@@ -2314,7 +2529,23 @@
         "properties": {
           "account_status": {
             "$ref": "#/components/schemas/AccountStatus"
+          },
+          "reason": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "Required when blocking/banning (Plan V6 §13.4). Stored on the user and\nrecorded in the event; cleared when reactivating."
           }
+        }
+      },
+      "UserMetadataResponse": {
+        "type": "object",
+        "required": [
+          "metadata"
+        ],
+        "properties": {
+          "metadata": {}
         }
       },
       "UserSummary": {
@@ -2371,6 +2602,13 @@
               "null"
             ],
             "format": "date-time"
+          },
+          "status_reason": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "Why the account is blocked/banned (AUDIT-STATUS-001). Null when active."
           }
         }
       },
@@ -2426,6 +2664,10 @@
     {
       "name": "api-keys",
       "description": "API key management for service accounts"
+    },
+    {
+      "name": "users",
+      "description": "Per-app user metadata (service accounts)"
     },
     {
       "name": "events",

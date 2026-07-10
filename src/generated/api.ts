@@ -127,14 +127,34 @@ export interface paths {
         options?: never;
         head?: never;
         /**
-         * OPS-001: block/unblock a user manually. Sets `account_status` to
-         *     `blocked` (or `active` to unblock). Does NOT touch `locked_until`
-         *     (that's the lockout system's field, auto-cleared on expiry).
-         *     Blocking proactively revokes all active sessions — the access token
-         *     TTL is 15 min, so this is the difference between "eventual" and
-         *     "immediate" enforcement (CORE-006).
+         * OPS-001 / AUDIT-STATUS-001: block, ban, or reactivate a user. `blocked`
+         *     (temporary) and `banned` (permanent) require a `reason` (§13.4) and
+         *     proactively revoke all active sessions — the access token TTL is 15 min,
+         *     so this is the difference between "eventual" and "immediate" enforcement
+         *     (CORE-006). Does NOT touch `locked_until` (the lockout system's field).
          */
         patch: operations["update_user_status"];
+        trace?: never;
+    };
+    "/v1/admin/users/{id}/metadata": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get: operations["get_admin_metadata"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        /**
+         * Operator annotations at the identity level — set from the dashboard when
+         *     someone investigates a user and wants to record notes/tags/behavior.
+         *     Distinct from the per-app `local_metadata` an app writes about its own user.
+         */
+        patch: operations["patch_admin_metadata"];
         trace?: never;
     };
     "/v1/admin/users/{id}/sessions": {
@@ -439,6 +459,22 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/v1/users/{id}/metadata": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get: operations["get_metadata"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch: operations["patch_metadata"];
+        trace?: never;
+    };
 }
 export type webhooks = Record<string, never>;
 export interface components {
@@ -449,7 +485,8 @@ export interface components {
         ActorKind: "human" | "service_account" | "agent";
         AdminSessionSummary: {
             /** Format: uuid */
-            app_id: string;
+            app_id?: string | null;
+            client_info?: unknown;
             /** Format: date-time */
             created_at: string;
             device_id?: string | null;
@@ -649,6 +686,10 @@ export interface components {
             /** Format: int64 */
             offset?: number | null;
         };
+        PatchMetadataRequest: {
+            /** @description JSON object shallow-merged into the membership's `local_metadata`. */
+            metadata: unknown;
+        };
         RefreshRequest: {
             refresh_token: string;
         };
@@ -710,6 +751,14 @@ export interface components {
         };
         UpdateUserStatus: {
             account_status: components["schemas"]["AccountStatus"];
+            /**
+             * @description Required when blocking/banning (Plan V6 §13.4). Stored on the user and
+             *     recorded in the event; cleared when reactivating.
+             */
+            reason?: string | null;
+        };
+        UserMetadataResponse: {
+            metadata: unknown;
         };
         UserSummary: {
             account_status: components["schemas"]["AccountStatus"];
@@ -728,6 +777,8 @@ export interface components {
             last_login_at?: string | null;
             /** Format: date-time */
             locked_until?: string | null;
+            /** @description Why the account is blocked/banned (AUDIT-STATUS-001). Null when active. */
+            status_reason?: string | null;
         };
         VerifyEmailRequest: {
             token: string;
@@ -1028,7 +1079,92 @@ export interface operations {
                 };
                 content?: never;
             };
-            /** @description Only 'blocked' or 'active' allowed */
+            /** @description Invalid status, or missing reason for block/ban */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Not platform admin */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description User not found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    get_admin_metadata: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description User ID */
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Operator/admin annotations on the user */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["UserMetadataResponse"];
+                };
+            };
+            /** @description Not platform admin */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description User not found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    patch_admin_metadata: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description User ID */
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["PatchMetadataRequest"];
+            };
+        };
+        responses: {
+            /** @description Updated admin annotations (shallow-merged) */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["UserMetadataResponse"];
+                };
+            };
+            /** @description metadata must be a JSON object */
             400: {
                 headers: {
                     [name: string]: unknown;
@@ -1754,6 +1890,91 @@ export interface operations {
                 content?: never;
             };
             /** @description Session not found or not owned */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    get_metadata: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description User ID */
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description The user's per-app metadata */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["UserMetadataResponse"];
+                };
+            };
+            /** @description Missing users:read_app scope */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description No membership in the caller's app */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    patch_metadata: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description User ID */
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["PatchMetadataRequest"];
+            };
+        };
+        responses: {
+            /** @description Updated metadata (shallow-merged) */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["UserMetadataResponse"];
+                };
+            };
+            /** @description metadata must be a JSON object */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Missing users:write_app scope */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description No membership in the caller's app */
             404: {
                 headers: {
                     [name: string]: unknown;
