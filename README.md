@@ -124,6 +124,20 @@ new GatewardPlatform({
 });
 ```
 
+## Retry automático (opcional)
+
+Pasá `retry` a cualquier cliente (`true` para defaults, u objeto para tunear). Es
+**idempotency-aware**:
+
+```ts
+new GatewardServer({ baseUrl, apiKey, retry: true });
+new GatewardAuth({ baseUrl, appId, retry: { maxRetries: 3, baseDelayMs: 200 } });
+```
+
+- **429** → reintenta en cualquier método (el server rechazó antes de procesar), respetando `Retry-After`.
+- **Error de red / 502·503·504** → reintenta **solo** en métodos idempotentes (GET/HEAD/OPTIONS/DELETE/PUT). **Nunca** POST/PATCH — podrían re-ejecutarse (ej. un `sendEvent` duplicado).
+- Backoff exponencial con jitter, cortable por `AbortSignal`. Desactivado por default.
+
 ## Recuperación de cuenta
 
 `GatewardAuth` también expone: `forgotPassword(email)`, `resetPassword(token, newPassword)`,

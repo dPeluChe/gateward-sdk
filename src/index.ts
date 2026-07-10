@@ -13,7 +13,11 @@ export {
   type TokenStorage,
   type TokenSet,
 } from "./core/storage.js";
-export { HttpClient, type RequestHooks } from "./core/http.js";
+export {
+  HttpClient,
+  type RequestHooks,
+  type RetryOptions,
+} from "./core/http.js";
 export { resolveDeviceId } from "./core/device.js";
 export {
   JwtVerifier,
