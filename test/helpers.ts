@@ -37,7 +37,9 @@ export function stubFetch(
     const status = r.status ?? 200;
     const payload =
       r.text ?? (r.json !== undefined ? JSON.stringify(r.json) : "");
-    return new Response(payload, {
+    // 204/205/304 must have a null body, and an empty string is still a body.
+    const body = payload === "" ? null : payload;
+    return new Response(body, {
       status,
       headers: { "content-type": "application/json" },
     });

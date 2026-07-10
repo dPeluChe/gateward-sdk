@@ -12,6 +12,25 @@ export type ActorKind = Schemas["ActorKind"];
 export type Jwk = Schemas["Jwk"];
 export type JwksResponse = Schemas["JwksResponse"];
 
+// Admin / management schemas (used by the GatewardPlatform typed helpers).
+export type UserSummary = Schemas["UserSummary"];
+export type AdminSessionSummary = Schemas["AdminSessionSummary"];
+export type UpdateUserStatus = Schemas["UpdateUserStatus"];
+export type ListUsersQuery = Schemas["ListUsersQuery"];
+export type EcosystemResponse = Schemas["EcosystemResponse"];
+export type CreateEcosystemRequest = Schemas["CreateEcosystemRequest"];
+export type IdentityPoolResponse = Schemas["IdentityPoolResponse"];
+export type CreateIdentityPoolRequest = Schemas["CreateIdentityPoolRequest"];
+export type AppResponse = Schemas["AppResponse"];
+export type CreateAppRequest = Schemas["CreateAppRequest"];
+export type ApiKeySummary = Schemas["ApiKeySummary"];
+export type CreateApiKeyRequest = Schemas["CreateApiKeyRequest"];
+export type ListApiKeysQuery = Schemas["ListApiKeysQuery"];
+export type ListEventsQuery = Schemas["ListEventsQuery"];
+export type ForgotPasswordResponse = Schemas["ForgotPasswordResponse"];
+export type ResendVerificationEmailResponse =
+  Schemas["ResendVerificationEmailResponse"];
+
 /** A cross-platform `fetch` implementation (defaults to global `fetch`). */
 export type FetchLike = typeof fetch;
 
