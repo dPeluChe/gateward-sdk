@@ -1,7 +1,7 @@
 {
   "name": "@gateward/sdk",
   "version": "0.1.0",
-  "description": "TypeScript SDK for the Gateward identity provider — auth, sessions, events, and local JWT verification.",
+  "description": "Client/integrator SDK for Gateward — end-user auth (browser) + backend token verification & events. Admin/control-plane lives in the dashboard.",
   "type": "module",
   "license": "UNLICENSED",
   "private": true,
