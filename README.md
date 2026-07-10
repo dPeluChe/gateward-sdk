@@ -1,12 +1,19 @@
 # Gateward SDK (TypeScript)
 
-SDK cliente de Gateward para **browser** y **backend**. Consume el Core por API y
-**genera sus tipos desde el contrato OpenAPI** (`GET /api-docs/openapi.json`), no a mano.
+SDK de **integración** de Gateward para las apps que lo usan como identity provider
+(browser + backend). Consume el Core por API y **genera sus tipos desde el contrato
+OpenAPI** (`GET /api-docs/openapi.json`), no a mano.
 
 - `@gateward/sdk` — auth de usuario (register/login/refresh automático/logout), sesiones
   propias, y verificación local de JWT (ES256 vía JWKS).
 - `@gateward/sdk/server` — server-to-server con API key (`X-API-Key`): `sendEvent`,
   `listEvents`, y `verifyToken`.
+
+> **Alcance:** este SDK cubre la superficie de **cliente/integrador** solamente. Las
+> operaciones de **admin/control-plane** (gestión de ecosystems, usuarios, api keys, ver
+> todos los eventos) **no** viven acá — son del dashboard admin, construidas sobre el
+> primitivo `AuthSession` que este paquete exporta. Así ningún integrador hereda superficie
+> admin.
 
 ## Instalación
 
@@ -76,33 +83,13 @@ La verificación descarga el JWKS una vez (`/.well-known/jwks.json`), lo cachea 
 1h, igual que el `Cache-Control` del Core) y refetchea si aparece un `kid` desconocido
 (rotación de claves).
 
-## Platform admin (dashboard)
+## Admin / control-plane
 
-Para paneles de administración: `GatewardPlatform` hace `platform-login` (no es
-app-scoped, no manda `X-Gateward-App-Id`) con refresh automático, y expone
-`authedRequest` para operar los endpoints admin/management.
-
-```ts
-import { GatewardPlatform } from "@gateward/sdk";
-
-const admin = new GatewardPlatform({ baseUrl: "https://gateward.fondor.space" });
-await admin.platformLogin("admin@org.com", "s3cret");
-
-// Typed helpers — no raw paths, no manual casts. Params + results are typed.
-const ecosystems = await admin.ecosystems.list();
-const users = await admin.users.list({ ecosystem_id, limit: 50 });
-await admin.users.updateStatus(userId, { account_status: "blocked" });
-const sessions = await admin.users.sessions(userId);
-const key = await admin.apiKeys.create({
-  ecosystem_id, identity_pool_id, app_id, email, scopes: ["events:write"],
-}); // key.key is returned once
-const events = await admin.events.list({ user_id: userId, limit: 100 });
-await admin.logout();
-```
-
-Todos los namespaces: `ecosystems`, `identityPools`, `apps`, `users`, `sessions`,
-`apiKeys`, `events`. Para algo no envuelto todavía, `admin.authedRequest(method, path, opts)`
-sigue disponible.
+Las operaciones de platform_admin (ecosystems, usuarios, api keys, todos los eventos) **no
+están en este SDK** — son del dashboard admin. Se construyen extendiendo el primitivo
+`AuthSession` que este paquete exporta (trae el ciclo de tokens: refresh automático
+single-flight, reintento 401, storage) y llamando `authedRequest(method, path, opts)`.
+Ver el módulo `src/lib/gateward/` del repo `gateward-dashboard`.
 
 > El browser hablando cross-origin con el Core necesita CORS: configurá
 > `CORS_ALLOWED_ORIGINS` en el Core (HARDEN-001) con el origen del dashboard.

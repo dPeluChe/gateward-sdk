@@ -3,30 +3,15 @@ import type { components } from "../generated/api.js";
 /** Convenient aliases over the OpenAPI-generated schema objects. */
 type Schemas = components["schemas"];
 
+// Client/integrator surface only — admin/management schemas are intentionally
+// NOT exported here; the admin dashboard generates its own from the contract.
 export type TokenResponse = Schemas["TokenResponse"];
 export type RegisterResponse = Schemas["RegisterResponse"];
 export type SessionSummary = Schemas["SessionSummary"];
 export type EventRecord = Schemas["EventRecord"];
-export type ApiKeyResponse = Schemas["ApiKeyResponse"];
 export type ActorKind = Schemas["ActorKind"];
 export type Jwk = Schemas["Jwk"];
 export type JwksResponse = Schemas["JwksResponse"];
-
-// Admin / management schemas (used by the GatewardPlatform typed helpers).
-export type UserSummary = Schemas["UserSummary"];
-export type AdminSessionSummary = Schemas["AdminSessionSummary"];
-export type UpdateUserStatus = Schemas["UpdateUserStatus"];
-export type ListUsersQuery = Schemas["ListUsersQuery"];
-export type EcosystemResponse = Schemas["EcosystemResponse"];
-export type CreateEcosystemRequest = Schemas["CreateEcosystemRequest"];
-export type IdentityPoolResponse = Schemas["IdentityPoolResponse"];
-export type CreateIdentityPoolRequest = Schemas["CreateIdentityPoolRequest"];
-export type AppResponse = Schemas["AppResponse"];
-export type CreateAppRequest = Schemas["CreateAppRequest"];
-export type ApiKeySummary = Schemas["ApiKeySummary"];
-export type CreateApiKeyRequest = Schemas["CreateApiKeyRequest"];
-export type ListApiKeysQuery = Schemas["ListApiKeysQuery"];
-export type ListEventsQuery = Schemas["ListEventsQuery"];
 export type ForgotPasswordResponse = Schemas["ForgotPasswordResponse"];
 export type ResendVerificationEmailResponse =
   Schemas["ResendVerificationEmailResponse"];
