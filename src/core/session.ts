@@ -68,7 +68,7 @@ export abstract class AuthSession {
   async authedRequest<T>(
     method: string,
     path: string,
-    opts: { body?: unknown; query?: Record<string, string | number> } = {},
+    opts: { body?: unknown; query?: Record<string, unknown> } = {},
   ): Promise<T> {
     const token = await this.getAccessToken();
     try {

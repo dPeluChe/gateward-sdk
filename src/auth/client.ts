@@ -1,10 +1,12 @@
-import { HttpClient } from "../core/http.js";
+import { HttpClient, type RequestHooks } from "../core/http.js";
 import { resolveDeviceId } from "../core/device.js";
 import { AuthSession, type SessionOptions } from "../core/session.js";
 import type { TokenSet } from "../core/storage.js";
 import type {
   FetchLike,
+  ForgotPasswordResponse,
   RegisterResponse,
+  ResendVerificationEmailResponse,
   SessionSummary,
   TokenResponse,
 } from "../core/types.js";
@@ -17,6 +19,8 @@ export interface GatewardAuthOptions extends SessionOptions {
    *  auto-generated id in the browser; pass one to control it. Set to `false`
    *  to disable sending it. */
   deviceId?: string | false;
+  /** Observability hooks (onRequest/onResponse/onError). */
+  hooks?: RequestHooks;
   /** Custom fetch (defaults to global `fetch`). */
   fetch?: FetchLike;
 }
@@ -33,6 +37,7 @@ export class GatewardAuth extends AuthSession {
         baseUrl: opts.baseUrl,
         appId: opts.appId,
         ...(deviceId ? { deviceId } : {}),
+        ...(opts.hooks ? { hooks: opts.hooks } : {}),
         ...(opts.fetch ? { fetch: opts.fetch } : {}),
       }),
       opts,
@@ -62,5 +67,40 @@ export class GatewardAuth extends AuthSession {
   /** Revoke one of the caller's sessions by id. */
   async revokeSession(sessionId: string): Promise<void> {
     await this.authedRequest<void>("DELETE", `/v1/sessions/${sessionId}`);
+  }
+
+  /** Start password recovery — the Core emails a reset token (always 202,
+   *  regardless of whether the email exists, to avoid enumeration). */
+  forgotPassword(email: string): Promise<ForgotPasswordResponse> {
+    return this.http.request<ForgotPasswordResponse>(
+      "POST",
+      "/v1/auth/forgot-password",
+      { body: { email } },
+    );
+  }
+
+  /** Complete password recovery with the emailed token. */
+  async resetPassword(token: string, newPassword: string): Promise<void> {
+    await this.http.request<void>("POST", "/v1/auth/reset-password", {
+      body: { token, new_password: newPassword },
+    });
+  }
+
+  /** Verify an email address with the emailed token. */
+  async verifyEmail(token: string): Promise<void> {
+    await this.http.request<void>("POST", "/v1/auth/verify-email", {
+      body: { token },
+    });
+  }
+
+  /** Resend the verification email (always 202, anti-enumeration). */
+  resendVerificationEmail(
+    email: string,
+  ): Promise<ResendVerificationEmailResponse> {
+    return this.http.request<ResendVerificationEmailResponse>(
+      "POST",
+      "/v1/auth/resend-verification-email",
+      { body: { email } },
+    );
   }
 }

@@ -1,6 +1,18 @@
 import { GatewardError } from "./errors.js";
 import type { FetchLike } from "./types.js";
 
+/** Observability callbacks fired around each request. All optional; a throw
+ *  inside a hook is swallowed so instrumentation can't break requests. */
+export interface RequestHooks {
+  onRequest?: (info: { method: string; path: string }) => void;
+  onResponse?: (info: { method: string; path: string; status: number }) => void;
+  onError?: (info: {
+    method: string;
+    path: string;
+    error: GatewardError;
+  }) => void;
+}
+
 export interface HttpClientOptions {
   /** Base URL of the Core, e.g. `https://gateward.fondor.space`. */
   baseUrl: string;
@@ -8,6 +20,8 @@ export interface HttpClientOptions {
   appId?: string;
   /** Stable device id sent as `X-Gateward-Device-Id` when set. */
   deviceId?: string;
+  /** Observability hooks (onRequest/onResponse/onError). */
+  hooks?: RequestHooks;
   /** Custom fetch (tests, non-global-fetch runtimes). Defaults to `fetch`. */
   fetch?: FetchLike;
 }
@@ -19,8 +33,8 @@ export interface RequestOptions {
   bearer?: string;
   /** `X-API-Key` for service-to-service calls. */
   apiKey?: string;
-  /** Query params; `undefined`/`null` values are dropped. */
-  query?: Record<string, string | number | undefined | null>;
+  /** Query params; `undefined`/`null` values are dropped, others stringified. */
+  query?: Record<string, unknown>;
   /** Extra headers, merged last. */
   headers?: Record<string, string>;
   signal?: AbortSignal;
@@ -33,12 +47,14 @@ export class HttpClient {
   private readonly baseUrl: string;
   private readonly appId: string | undefined;
   private readonly deviceId: string | undefined;
+  private readonly hooks: RequestHooks | undefined;
   private readonly fetchImpl: FetchLike;
 
   constructor(opts: HttpClientOptions) {
     this.baseUrl = opts.baseUrl.replace(/\/+$/, "");
     this.appId = opts.appId;
     this.deviceId = opts.deviceId;
+    this.hooks = opts.hooks;
     this.fetchImpl = opts.fetch ?? globalThis.fetch;
     if (!this.fetchImpl) {
       throw new Error(
@@ -65,6 +81,8 @@ export class HttpClient {
     if (opts.body !== undefined) headers["Content-Type"] = "application/json";
     Object.assign(headers, opts.headers);
 
+    this.fire(this.hooks?.onRequest, { method, path });
+
     let res: Response;
     try {
       res = await this.fetchImpl(url.toString(), {
@@ -76,21 +94,36 @@ export class HttpClient {
         ...(opts.signal ? { signal: opts.signal } : {}),
       });
     } catch (cause) {
-      throw new GatewardError(
+      const error = new GatewardError(
         `network error calling ${method} ${path}: ${String(cause)}`,
         0,
       );
+      this.fire(this.hooks?.onError, { method, path, error });
+      throw error;
     }
 
     const parsed = await parseBody(res);
     if (!res.ok) {
-      throw new GatewardError(
+      const error = new GatewardError(
         errorMessage(res.status, parsed),
         res.status,
         parsed,
       );
+      this.fire(this.hooks?.onError, { method, path, error });
+      throw error;
     }
+    this.fire(this.hooks?.onResponse, { method, path, status: res.status });
     return parsed as T;
+  }
+
+  /** Run a hook, swallowing any error so instrumentation can't break I/O. */
+  private fire<A>(hook: ((arg: A) => void) | undefined, arg: A): void {
+    if (!hook) return;
+    try {
+      hook(arg);
+    } catch {
+      /* observability must never affect the request */
+    }
   }
 }
 

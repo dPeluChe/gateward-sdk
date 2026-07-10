@@ -13,7 +13,7 @@ export {
   type TokenStorage,
   type TokenSet,
 } from "./core/storage.js";
-export { HttpClient } from "./core/http.js";
+export { HttpClient, type RequestHooks } from "./core/http.js";
 export { resolveDeviceId } from "./core/device.js";
 export {
   JwtVerifier,
@@ -30,4 +30,22 @@ export type {
   Jwk,
   JwksResponse,
   FetchLike,
+  // Admin / management schemas (GatewardPlatform helpers)
+  UserSummary,
+  AdminSessionSummary,
+  UpdateUserStatus,
+  ListUsersQuery,
+  EcosystemResponse,
+  CreateEcosystemRequest,
+  IdentityPoolResponse,
+  CreateIdentityPoolRequest,
+  AppResponse,
+  CreateAppRequest,
+  ApiKeyResponse,
+  ApiKeySummary,
+  CreateApiKeyRequest,
+  ListApiKeysQuery,
+  ListEventsQuery,
+  ForgotPasswordResponse,
+  ResendVerificationEmailResponse,
 } from "./core/types.js";

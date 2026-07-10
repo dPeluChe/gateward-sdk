@@ -88,24 +88,46 @@ import { GatewardPlatform } from "@gateward/sdk";
 const admin = new GatewardPlatform({ baseUrl: "https://gateward.fondor.space" });
 await admin.platformLogin("admin@org.com", "s3cret");
 
-const ecosystems = await admin.authedRequest("GET", "/v1/ecosystems");
-const users = await admin.authedRequest("GET", "/v1/admin/users", {
-  query: { limit: 50 },
-});
-const key = await admin.authedRequest("POST", "/v1/admin/api-keys", {
-  body: { ecosystem_id, identity_pool_id, app_id, email, scopes: ["events:write"] },
-});
-// … listSessions/revoke, PATCH user status, GET /v1/admin/events, etc.
+// Typed helpers — no raw paths, no manual casts. Params + results are typed.
+const ecosystems = await admin.ecosystems.list();
+const users = await admin.users.list({ ecosystem_id, limit: 50 });
+await admin.users.updateStatus(userId, { account_status: "blocked" });
+const sessions = await admin.users.sessions(userId);
+const key = await admin.apiKeys.create({
+  ecosystem_id, identity_pool_id, app_id, email, scopes: ["events:write"],
+}); // key.key is returned once
+const events = await admin.events.list({ user_id: userId, limit: 100 });
 await admin.logout();
 ```
+
+Todos los namespaces: `ecosystems`, `identityPools`, `apps`, `users`, `sessions`,
+`apiKeys`, `events`. Para algo no envuelto todavía, `admin.authedRequest(method, path, opts)`
+sigue disponible.
 
 > El browser hablando cross-origin con el Core necesita CORS: configurá
 > `CORS_ALLOWED_ORIGINS` en el Core (HARDEN-001) con el origen del dashboard.
 
-## Errores
+## Errores y observabilidad
 
 Toda respuesta no-2xx (o fallo de red) lanza `GatewardError` con `.status` y `.body`,
 más los helpers `.isUnauthorized` / `.isForbidden` / `.isRateLimited`.
+
+Para logging/metrics, pasá `hooks` a cualquier cliente:
+
+```ts
+new GatewardPlatform({
+  baseUrl,
+  hooks: {
+    onRequest: ({ method, path }) => log.debug(`${method} ${path}`),
+    onError: ({ path, error }) => metrics.inc("gateward.error", { path, status: error.status }),
+  },
+});
+```
+
+## Recuperación de cuenta
+
+`GatewardAuth` también expone: `forgotPassword(email)`, `resetPassword(token, newPassword)`,
+`verifyEmail(token)`, `resendVerificationEmail(email)`.
 
 ## Regenerar tipos desde el contrato
 
