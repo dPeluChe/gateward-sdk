@@ -11,6 +11,34 @@ export interface RequestHooks {
     path: string;
     error: GatewardError;
   }) => void;
+  onRetry?: (info: {
+    method: string;
+    path: string;
+    /** 1-based attempt number about to be made. */
+    attempt: number;
+    delayMs: number;
+    /** Status that triggered the retry (0 = network error). */
+    status: number;
+  }) => void;
+}
+
+/** Automatic retry policy. Retries are idempotency-aware: a 429 is retried
+ *  for any method (the server rejected it before processing), but network
+ *  failures and 502/503/504 are retried ONLY for idempotent methods
+ *  (GET/HEAD/OPTIONS/DELETE/PUT) — never POST/PATCH, which could double-run. */
+export interface RetryOptions {
+  /** Max retries after the first attempt (default 2). */
+  maxRetries?: number;
+  /** Base backoff in ms; grows exponentially with jitter (default 200). */
+  baseDelayMs?: number;
+  /** Upper bound per wait, also caps `Retry-After` (default 2000). */
+  maxDelayMs?: number;
+}
+
+interface ResolvedRetry {
+  maxRetries: number;
+  baseDelayMs: number;
+  maxDelayMs: number;
 }
 
 export interface HttpClientOptions {
@@ -20,8 +48,10 @@ export interface HttpClientOptions {
   appId?: string;
   /** Stable device id sent as `X-Gateward-Device-Id` when set. */
   deviceId?: string;
-  /** Observability hooks (onRequest/onResponse/onError). */
+  /** Observability hooks (onRequest/onResponse/onError/onRetry). */
   hooks?: RequestHooks;
+  /** Automatic retry. `false`/omitted = no retries; `true` = defaults. */
+  retry?: RetryOptions | boolean;
   /** Custom fetch (tests, non-global-fetch runtimes). Defaults to `fetch`. */
   fetch?: FetchLike;
 }
@@ -48,6 +78,7 @@ export class HttpClient {
   private readonly appId: string | undefined;
   private readonly deviceId: string | undefined;
   private readonly hooks: RequestHooks | undefined;
+  private readonly retry: ResolvedRetry;
   private readonly fetchImpl: FetchLike;
 
   constructor(opts: HttpClientOptions) {
@@ -55,6 +86,7 @@ export class HttpClient {
     this.appId = opts.appId;
     this.deviceId = opts.deviceId;
     this.hooks = opts.hooks;
+    this.retry = resolveRetry(opts.retry);
     this.fetchImpl = opts.fetch ?? globalThis.fetch;
     if (!this.fetchImpl) {
       throw new Error(
@@ -81,39 +113,100 @@ export class HttpClient {
     if (opts.body !== undefined) headers["Content-Type"] = "application/json";
     Object.assign(headers, opts.headers);
 
-    this.fire(this.hooks?.onRequest, { method, path });
+    const init: RequestInit = {
+      method,
+      headers,
+      ...(opts.body !== undefined ? { body: JSON.stringify(opts.body) } : {}),
+      ...(opts.signal ? { signal: opts.signal } : {}),
+    };
+    const idempotent = IDEMPOTENT_METHODS.has(method.toUpperCase());
 
-    let res: Response;
-    try {
-      res = await this.fetchImpl(url.toString(), {
-        method,
-        headers,
-        ...(opts.body !== undefined
-          ? { body: JSON.stringify(opts.body) }
-          : {}),
-        ...(opts.signal ? { signal: opts.signal } : {}),
-      });
-    } catch (cause) {
-      const error = new GatewardError(
-        `network error calling ${method} ${path}: ${String(cause)}`,
-        0,
-      );
-      this.fire(this.hooks?.onError, { method, path, error });
-      throw error;
-    }
+    for (let attempt = 0; ; attempt++) {
+      this.fire(this.hooks?.onRequest, { method, path });
 
-    const parsed = await parseBody(res);
-    if (!res.ok) {
-      const error = new GatewardError(
-        errorMessage(res.status, parsed),
-        res.status,
-        parsed,
-      );
-      this.fire(this.hooks?.onError, { method, path, error });
-      throw error;
+      let res: Response | undefined;
+      let cause: unknown;
+      try {
+        res = await this.fetchImpl(url.toString(), init);
+      } catch (e) {
+        cause = e;
+      }
+
+      // Network failure (status 0): retry only idempotent methods.
+      if (!res) {
+        if (this.canRetry(0, idempotent, attempt)) {
+          await this.waitBeforeRetry(method, path, attempt, 0, null, opts.signal);
+          continue;
+        }
+        const error = new GatewardError(
+          `network error calling ${method} ${path}: ${String(cause)}`,
+          0,
+        );
+        this.fire(this.hooks?.onError, { method, path, error });
+        throw error;
+      }
+
+      const parsed = await parseBody(res);
+      if (!res.ok) {
+        if (this.canRetry(res.status, idempotent, attempt)) {
+          await this.waitBeforeRetry(
+            method,
+            path,
+            attempt,
+            res.status,
+            res.headers.get("retry-after"),
+            opts.signal,
+          );
+          continue;
+        }
+        const error = new GatewardError(
+          errorMessage(res.status, parsed),
+          res.status,
+          parsed,
+        );
+        this.fire(this.hooks?.onError, { method, path, error });
+        throw error;
+      }
+      this.fire(this.hooks?.onResponse, { method, path, status: res.status });
+      return parsed as T;
     }
-    this.fire(this.hooks?.onResponse, { method, path, status: res.status });
-    return parsed as T;
+  }
+
+  /** Idempotency-aware: 429 retries for any method (not processed); network
+   *  errors and 502/503/504 retry only for idempotent methods. */
+  private canRetry(status: number, idempotent: boolean, attempt: number): boolean {
+    if (attempt >= this.retry.maxRetries) return false;
+    if (status === 429) return true;
+    return idempotent && (status === 0 || GATEWAY_STATUS.has(status));
+  }
+
+  private async waitBeforeRetry(
+    method: string,
+    path: string,
+    attempt: number,
+    status: number,
+    retryAfter: string | null,
+    signal: AbortSignal | undefined,
+  ): Promise<void> {
+    const delayMs = this.retryDelay(attempt, retryAfter);
+    this.fire(this.hooks?.onRetry, {
+      method,
+      path,
+      attempt: attempt + 1,
+      delayMs,
+      status,
+    });
+    await sleep(delayMs, signal);
+  }
+
+  private retryDelay(attempt: number, retryAfter: string | null): number {
+    const ra = parseRetryAfter(retryAfter);
+    if (ra !== undefined) return Math.min(ra, this.retry.maxDelayMs);
+    const exp = Math.min(
+      this.retry.maxDelayMs,
+      this.retry.baseDelayMs * 2 ** attempt,
+    );
+    return exp + Math.random() * this.retry.baseDelayMs;
   }
 
   /** Run a hook, swallowing any error so instrumentation can't break I/O. */
@@ -125,6 +218,47 @@ export class HttpClient {
       /* observability must never affect the request */
     }
   }
+}
+
+const IDEMPOTENT_METHODS = new Set(["GET", "HEAD", "OPTIONS", "DELETE", "PUT"]);
+const GATEWAY_STATUS = new Set([502, 503, 504]);
+
+function resolveRetry(retry: RetryOptions | boolean | undefined): ResolvedRetry {
+  const on = retry === true || (typeof retry === "object" && retry !== null);
+  const o = typeof retry === "object" && retry !== null ? retry : {};
+  return {
+    maxRetries: on ? (o.maxRetries ?? 2) : 0,
+    baseDelayMs: o.baseDelayMs ?? 200,
+    maxDelayMs: o.maxDelayMs ?? 2000,
+  };
+}
+
+/** Retry-After in seconds → ms. HTTP-date form is ignored (fall to backoff). */
+function parseRetryAfter(value: string | null): number | undefined {
+  if (!value) return undefined;
+  const secs = Number(value);
+  return Number.isFinite(secs) && secs >= 0 ? secs * 1000 : undefined;
+}
+
+function sleep(ms: number, signal?: AbortSignal): Promise<void> {
+  return new Promise((resolve, reject) => {
+    if (signal?.aborted) return reject(abortError());
+    const t = setTimeout(resolve, ms);
+    signal?.addEventListener(
+      "abort",
+      () => {
+        clearTimeout(t);
+        reject(abortError());
+      },
+      { once: true },
+    );
+  });
+}
+
+function abortError(): Error {
+  const e = new Error("request aborted");
+  e.name = "AbortError";
+  return e;
 }
 
 async function parseBody(res: Response): Promise<unknown> {

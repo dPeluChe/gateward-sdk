@@ -1,4 +1,8 @@
-import { HttpClient, type RequestHooks } from "../core/http.js";
+import {
+  HttpClient,
+  type RequestHooks,
+  type RetryOptions,
+} from "../core/http.js";
 import { resolveDeviceId } from "../core/device.js";
 import { AuthSession, type SessionOptions } from "../core/session.js";
 import type { TokenSet } from "../core/storage.js";
@@ -19,8 +23,10 @@ export interface GatewardAuthOptions extends SessionOptions {
    *  auto-generated id in the browser; pass one to control it. Set to `false`
    *  to disable sending it. */
   deviceId?: string | false;
-  /** Observability hooks (onRequest/onResponse/onError). */
+  /** Observability hooks (onRequest/onResponse/onError/onRetry). */
   hooks?: RequestHooks;
+  /** Automatic retry (idempotency-aware). `true` for defaults. */
+  retry?: RetryOptions | boolean;
   /** Custom fetch (defaults to global `fetch`). */
   fetch?: FetchLike;
 }
@@ -38,6 +44,7 @@ export class GatewardAuth extends AuthSession {
         appId: opts.appId,
         ...(deviceId ? { deviceId } : {}),
         ...(opts.hooks ? { hooks: opts.hooks } : {}),
+        ...(opts.retry !== undefined ? { retry: opts.retry } : {}),
         ...(opts.fetch ? { fetch: opts.fetch } : {}),
       }),
       opts,

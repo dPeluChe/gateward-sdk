@@ -1,4 +1,8 @@
-import { HttpClient } from "./core/http.js";
+import {
+  HttpClient,
+  type RequestHooks,
+  type RetryOptions,
+} from "./core/http.js";
 import { JwtVerifier } from "./jwt/verify.js";
 import type {
   EventRecord,
@@ -12,6 +16,10 @@ export interface GatewardServerOptions {
   apiKey: string;
   /** App id, sent as `X-Gateward-App-Id` when set. */
   appId?: string;
+  /** Observability hooks (onRequest/onResponse/onError/onRetry). */
+  hooks?: RequestHooks;
+  /** Automatic retry (idempotency-aware). `true` for defaults. */
+  retry?: RetryOptions | boolean;
   /** Custom fetch (defaults to global `fetch`). */
   fetch?: FetchLike;
   /** Expected token issuer for {@link verifyToken} (recommended). */
@@ -45,6 +53,8 @@ export class GatewardServer {
     this.http = new HttpClient({
       baseUrl: opts.baseUrl,
       ...(opts.appId ? { appId: opts.appId } : {}),
+      ...(opts.hooks ? { hooks: opts.hooks } : {}),
+      ...(opts.retry !== undefined ? { retry: opts.retry } : {}),
       ...(opts.fetch ? { fetch: opts.fetch } : {}),
     });
     this.apiKey = opts.apiKey;

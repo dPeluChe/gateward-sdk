@@ -1,4 +1,8 @@
-import { HttpClient, type RequestHooks } from "../core/http.js";
+import {
+  HttpClient,
+  type RequestHooks,
+  type RetryOptions,
+} from "../core/http.js";
 import { AuthSession, type SessionOptions } from "../core/session.js";
 import type { TokenSet } from "../core/storage.js";
 import type { FetchLike, TokenResponse } from "../core/types.js";
@@ -6,8 +10,10 @@ import { PlatformResources } from "./resources.js";
 
 export interface GatewardPlatformOptions extends SessionOptions {
   baseUrl: string;
-  /** Observability hooks (onRequest/onResponse/onError). */
+  /** Observability hooks (onRequest/onResponse/onError/onRetry). */
   hooks?: RequestHooks;
+  /** Automatic retry (idempotency-aware). `true` for defaults. */
+  retry?: RetryOptions | boolean;
   /** Custom fetch (defaults to global `fetch`). */
   fetch?: FetchLike;
 }
@@ -31,6 +37,7 @@ export class GatewardPlatform extends AuthSession {
       new HttpClient({
         baseUrl: opts.baseUrl,
         ...(opts.hooks ? { hooks: opts.hooks } : {}),
+        ...(opts.retry !== undefined ? { retry: opts.retry } : {}),
         ...(opts.fetch ? { fetch: opts.fetch } : {}),
       }),
       opts,
