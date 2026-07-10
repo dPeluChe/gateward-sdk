@@ -48,6 +48,8 @@ export interface HttpClientOptions {
   appId?: string;
   /** Stable device id sent as `X-Gateward-Device-Id` when set. */
   deviceId?: string;
+  /** IANA timezone sent as `X-Gateward-Timezone` when set. */
+  timezone?: string;
   /** Observability hooks (onRequest/onResponse/onError/onRetry). */
   hooks?: RequestHooks;
   /** Automatic retry. `false`/omitted = no retries; `true` = defaults. */
@@ -77,6 +79,7 @@ export class HttpClient {
   private readonly baseUrl: string;
   private readonly appId: string | undefined;
   private readonly deviceId: string | undefined;
+  private readonly timezone: string | undefined;
   private readonly hooks: RequestHooks | undefined;
   private readonly retry: ResolvedRetry;
   private readonly fetchImpl: FetchLike;
@@ -85,6 +88,7 @@ export class HttpClient {
     this.baseUrl = opts.baseUrl.replace(/\/+$/, "");
     this.appId = opts.appId;
     this.deviceId = opts.deviceId;
+    this.timezone = opts.timezone;
     this.hooks = opts.hooks;
     this.retry = resolveRetry(opts.retry);
     this.fetchImpl = opts.fetch ?? globalThis.fetch;
@@ -108,6 +112,7 @@ export class HttpClient {
     const headers: Record<string, string> = { Accept: "application/json" };
     if (this.appId) headers["X-Gateward-App-Id"] = this.appId;
     if (this.deviceId) headers["X-Gateward-Device-Id"] = this.deviceId;
+    if (this.timezone) headers["X-Gateward-Timezone"] = this.timezone;
     if (opts.bearer) headers["Authorization"] = `Bearer ${opts.bearer}`;
     if (opts.apiKey) headers["X-API-Key"] = opts.apiKey;
     if (opts.body !== undefined) headers["Content-Type"] = "application/json";

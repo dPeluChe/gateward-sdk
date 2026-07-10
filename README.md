@@ -50,9 +50,9 @@ await auth.logout(); // revoca en el server y limpia el storage (best-effort)
 
 Manda automáticamente un **`X-Gateward-Device-Id`** estable (generado y persistido
 en `localStorage` en el browser) para que el Core reconozca el mismo dispositivo entre
-sesiones. Pasá `deviceId: "..."` para controlarlo, o `deviceId: false` para desactivarlo.
-El Core, además, captura IP real (behind proxy) + navegador/OS del User-Agent en cada
-login/refresh.
+sesiones, y un **`X-Gateward-Timezone`** (IANA, detectado vía `Intl`). Controlables con
+`deviceId` / `timezone` (o `false` para desactivar). El Core, además, captura IP real
+(behind proxy) + navegador/OS del User-Agent en cada login/refresh.
 
 ## Server-to-server (API key)
 
