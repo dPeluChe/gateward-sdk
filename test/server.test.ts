@@ -48,3 +48,23 @@ describe("GatewardServer", () => {
     ).rejects.toMatchObject({ status: 429, isRateLimited: true });
   });
 });
+
+describe("GatewardServer user metadata", () => {
+  it("getUserMetadata GETs and unwraps metadata", async () => {
+    const { fetch, calls } = stubFetch([{ json: { metadata: { tier: "gold" } } }]);
+    const server = new GatewardServer({ baseUrl: BASE, apiKey: KEY, fetch });
+    const meta = await server.getUserMetadata("u1");
+    expect(meta).toEqual({ tier: "gold" });
+    expect(calls[0]!.url).toBe(`${BASE}/v1/users/u1/metadata`);
+    expect(calls[0]!.headers["x-api-key"]).toBe(KEY);
+  });
+
+  it("updateUserMetadata PATCHes the patch under metadata", async () => {
+    const { fetch, calls } = stubFetch([{ json: { metadata: { tier: "gold", flag: true } } }]);
+    const server = new GatewardServer({ baseUrl: BASE, apiKey: KEY, fetch });
+    const meta = await server.updateUserMetadata("u1", { flag: true });
+    expect(meta).toEqual({ tier: "gold", flag: true });
+    expect(calls[0]!.method).toBe("PATCH");
+    expect(calls[0]!.body).toEqual({ metadata: { flag: true } });
+  });
+});
