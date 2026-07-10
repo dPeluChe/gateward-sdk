@@ -4,6 +4,7 @@ import {
   type RetryOptions,
 } from "../core/http.js";
 import { resolveDeviceId } from "../core/device.js";
+import { resolveTimezone } from "../core/timezone.js";
 import { AuthSession, type SessionOptions } from "../core/session.js";
 import type { TokenSet } from "../core/storage.js";
 import type {
@@ -23,6 +24,9 @@ export interface GatewardAuthOptions extends SessionOptions {
    *  auto-generated id in the browser; pass one to control it. Set to `false`
    *  to disable sending it. */
   deviceId?: string | false;
+  /** IANA timezone (`X-Gateward-Timezone`). Defaults to the runtime's detected
+   *  zone; pass one to control it, or `false` to disable sending it. */
+  timezone?: string | false;
   /** Observability hooks (onRequest/onResponse/onError/onRetry). */
   hooks?: RequestHooks;
   /** Automatic retry (idempotency-aware). `true` for defaults. */
@@ -38,11 +42,14 @@ export class GatewardAuth extends AuthSession {
   constructor(opts: GatewardAuthOptions) {
     const deviceId =
       opts.deviceId === false ? undefined : resolveDeviceId(opts.deviceId);
+    const timezone =
+      opts.timezone === false ? undefined : resolveTimezone(opts.timezone);
     super(
       new HttpClient({
         baseUrl: opts.baseUrl,
         appId: opts.appId,
         ...(deviceId ? { deviceId } : {}),
+        ...(timezone ? { timezone } : {}),
         ...(opts.hooks ? { hooks: opts.hooks } : {}),
         ...(opts.retry !== undefined ? { retry: opts.retry } : {}),
         ...(opts.fetch ? { fetch: opts.fetch } : {}),

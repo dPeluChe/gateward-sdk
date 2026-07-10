@@ -18,6 +18,7 @@ export {
   type RetryOptions,
 } from "./core/http.js";
 export { resolveDeviceId } from "./core/device.js";
+export { resolveTimezone } from "./core/timezone.js";
 export {
   JwtVerifier,
   decodeClaims,

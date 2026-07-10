@@ -73,3 +73,26 @@ describe("auth recovery endpoints", () => {
     expect(calls[0]!.body).toEqual({ token: "tok-1", new_password: "newpass123" });
   });
 });
+
+describe("timezone header", () => {
+  it("sends X-Gateward-Timezone from GatewardAuth", async () => {
+    const { fetch, calls } = stubFetch([token()]);
+    const auth = new GatewardAuth({
+      baseUrl: BASE,
+      appId: APP,
+      timezone: "America/Argentina/Buenos_Aires",
+      fetch,
+    });
+    await auth.login("a@b.co", "pw");
+    expect(calls[0]!.headers["x-gateward-timezone"]).toBe(
+      "America/Argentina/Buenos_Aires",
+    );
+  });
+
+  it("omits the timezone header when disabled", async () => {
+    const { fetch, calls } = stubFetch([token()]);
+    const auth = new GatewardAuth({ baseUrl: BASE, appId: APP, timezone: false, fetch });
+    await auth.login("a@b.co", "pw");
+    expect(calls[0]!.headers["x-gateward-timezone"]).toBeUndefined();
+  });
+});
