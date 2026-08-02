@@ -16,6 +16,11 @@
       "types": "./dist/server.d.ts",
       "import": "./dist/server.js",
       "require": "./dist/server.cjs"
+    },
+    "./next": {
+      "types": "./dist/next.d.ts",
+      "import": "./dist/next.js",
+      "require": "./dist/next.cjs"
     }
   },
   "main": "./dist/index.cjs",
@@ -39,6 +44,7 @@
   },
   "devDependencies": {
     "@types/node": "^26.1.1",
+    "jsdom": "^30.0.1",
     "openapi-typescript": "^7.4.4",
     "tsup": "^8.3.5",
     "typescript": "^5.7.2",
