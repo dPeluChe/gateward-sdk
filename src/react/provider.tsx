@@ -24,14 +24,12 @@ export interface GatewardProviderProps {
   auth?: GatewardAuth;
   /** …the options to build one. Exactly one of the two is required. */
   config?: GatewardAuthOptions;
-  /** Fired when the server drops the session out from under the app (a dead
-   *  refresh token), *not* on an explicit `logout()`. This is where a Next.js
+  /** Server dropped the session — not an explicit `logout()`. Where a Next
    *  app does its hard redirect so middleware re-evaluates. */
   onSessionExpired?: () => void;
 }
 
-/** Owns the session state React renders from: bootstraps the user on mount,
- *  then follows the client's auth events. */
+/** Owns the session state React renders from. */
 export function GatewardProvider({
   children,
   auth: injected,
@@ -42,15 +40,13 @@ export function GatewardProvider({
     if (injected) return injected;
     if (config) return new GatewardAuth(config);
     throw new Error("<GatewardProvider> needs either `auth` or `config`");
-    // A new client per render would drop the token cache and re-bootstrap.
   }, [injected, config]);
 
   const [user, setUser] = useState<GatewardUser | null>(null);
   const [status, setStatus] = useState<AuthStatus>("loading");
   const [error, setError] = useState<Error | null>(null);
 
-  // Read through a ref so the event subscription below doesn't need to
-  // re-bind every time the caller passes a new inline closure.
+  // Via ref so the subscription below survives a new inline closure.
   const onExpired = useRef(onSessionExpired);
   useEffect(() => {
     onExpired.current = onSessionExpired;
@@ -65,9 +61,8 @@ export function GatewardProvider({
     [client],
   );
 
-  // Bootstrap. A 401 here is the normal signed-out path, not a failure; any
-  // other error (network, 500) must not masquerade as "signed out" — the app
-  // would bounce a perfectly valid session to /login over a blip.
+  // A 401 here is the normal signed-out path; any other error must not
+  // masquerade as it, or a blip bounces a valid session to /login.
   useEffect(() => {
     let cancelled = false;
     setStatus("loading");
@@ -94,7 +89,6 @@ export function GatewardProvider({
   useEffect(() => {
     return client.onAuthStateChange(({ event }) => {
       if (event === "signed_in") {
-        // The tokens are already stored; fetch the identity behind them.
         void loadUser(true).catch(() => {
           /* surfaced by the login() call that triggered this */
         });
@@ -105,7 +99,7 @@ export function GatewardProvider({
         setStatus("unauthenticated");
         if (event === "session_expired") onExpired.current?.();
       }
-      // token_refreshed: same identity, new tokens — nothing to re-render.
+      // token_refreshed: same identity — nothing to re-render.
     });
   }, [client, loadUser]);
 
@@ -131,8 +125,7 @@ export function GatewardProvider({
       password: string,
       opts: { metadata?: Record<string, unknown> } = {},
     ): Promise<void> => {
-      // Register issues no tokens — the Core requires email verification
-      // first — so the session state deliberately does not change here.
+      // No tokens issued (the Core verifies email first), so no state change.
       await run(() => client.register(email, password, opts));
     },
     [client, run],

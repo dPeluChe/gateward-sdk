@@ -4,9 +4,8 @@ import type { GatewardAuth } from "../auth/client.js";
 import type { GatewardUser } from "../core/types.js";
 import type { TokenSet } from "../core/storage.js";
 
-/** Mirrors the three-state shape every surveyed app already models by hand.
- *  `loading` is the bootstrap window — an app that treats "no user yet" as
- *  "signed out" flashes the login screen on every reload. */
+/** `loading` is the bootstrap window; treating it as signed out flashes the
+ *  login screen on every reload. See docs/ARCHITECTURE/SESSION.md. */
 export type AuthStatus = "loading" | "authenticated" | "unauthenticated";
 
 export interface GatewardContextValue {
