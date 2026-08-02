@@ -8,8 +8,14 @@ type Schemas = components["schemas"];
 export type TokenResponse = Schemas["TokenResponse"];
 export type RegisterResponse = Schemas["RegisterResponse"];
 /** The caller's own identity, from `GET /v1/auth/me`. `role`/`metadata` are
- *  the membership in the token's app — `null`/`{}` on platform tokens. */
-export type GatewardUser = Schemas["MeResponse"];
+ *  the membership in the token's app — `null`/`{}` on platform tokens.
+ *
+ *  `metadata` is arbitrary JSON in the contract, which utoipa renders as the
+ *  empty object type — unusable for a consumer. Widened here to the same
+ *  shape `GatewardServer.getUserMetadata` already returns. */
+export type GatewardUser = Omit<Schemas["MeResponse"], "metadata"> & {
+  metadata: Record<string, unknown>;
+};
 export type SessionSummary = Schemas["SessionSummary"];
 export type EventRecord = Schemas["EventRecord"];
 export type ActorKind = Schemas["ActorKind"];
