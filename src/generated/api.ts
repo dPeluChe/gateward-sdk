@@ -77,6 +77,26 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/v1/admin/scopes": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Feedback #5: expose the scope catalog so the dashboard loads it
+         *     dynamically instead of hardcoding a list that can drift from the Core.
+         */
+        get: operations["list_scopes"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/v1/admin/sessions/{id}": {
         parameters: {
             query?: never;
@@ -189,6 +209,27 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/v1/apps/{id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        /**
+         * PROVISION-DELETE-001: hard-delete an app for wizard cleanup. Refuses if
+         *     the app still has memberships, sessions, API keys, or events (409) —
+         *     those must be removed first (protects against deleting a live app).
+         */
+        delete: operations["delete_app"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/v1/auth/forgot-password": {
         parameters: {
             query?: never;
@@ -241,6 +282,28 @@ export interface paths {
         get?: never;
         put?: never;
         post: operations["logout"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/auth/me": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Every surveyed integrator needs `{id, email, name, role}` right after
+         *     login; without this they would each re-derive it from JWT claims plus a
+         *     second call. One round-trip, no admin scope needed — a caller can only
+         *     ever read itself (`WHERE u.id = auth.user_id`).
+         */
+        get: operations["whoami"];
+        put?: never;
+        post?: never;
         delete?: never;
         options?: never;
         head?: never;
@@ -381,6 +444,27 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/v1/ecosystems/{id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        /**
+         * PROVISION-DELETE-001: hard-delete an ecosystem for Setup Wizard cleanup.
+         *     Refuses to delete the system ecosystem, or one that still has identity
+         *     pools, apps, or users (409) — the caller must remove children first.
+         */
+        delete: operations["delete_ecosystem"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/v1/events": {
         parameters: {
             query?: never;
@@ -422,6 +506,26 @@ export interface paths {
         put?: never;
         post: operations["create_identity_pool"];
         delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/identity-pools/{id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        /**
+         * PROVISION-DELETE-001: hard-delete an identity pool for wizard cleanup.
+         *     Refuses the system pool, or one that still has apps or users (409).
+         */
+        delete: operations["delete_identity_pool"];
         options?: never;
         head?: never;
         patch?: never;
@@ -486,7 +590,7 @@ export interface components {
         AdminSessionSummary: {
             /** Format: uuid */
             app_id?: string | null;
-            client_info?: unknown;
+            client_info?: null | components["schemas"]["ClientInfo"];
             /** Format: date-time */
             created_at: string;
             device_id?: string | null;
@@ -505,6 +609,8 @@ export interface components {
         ApiKeyResponse: {
             /** Format: date-time */
             created_at: string;
+            /** Format: date-time */
+            expires_at?: string | null;
             /** Format: uuid */
             id: string;
             key: string;
@@ -516,6 +622,8 @@ export interface components {
             created_at: string;
             /** Format: uuid */
             ecosystem_id: string;
+            /** Format: date-time */
+            expires_at?: string | null;
             /** Format: uuid */
             id: string;
             /** Format: uuid */
@@ -541,12 +649,61 @@ export interface components {
             redirect_urls: string[];
             status: string;
         };
+        /**
+         * @description Typed view of the `client_info` jsonb stored on a session / event — so the
+         *     OpenAPI contract exposes real properties instead of an opaque object.
+         *     Mirrors the fields [`ClientContext::to_metadata`] writes (all optional; only
+         *     present fields are serialized).
+         */
+        ClientInfo: {
+            browser?: string | null;
+            browser_version?: string | null;
+            country?: string | null;
+            country_code?: string | null;
+            device_id?: string | null;
+            device_type?: string | null;
+            locale?: string | null;
+            os?: string | null;
+            timezone?: string | null;
+        };
+        /**
+         * @description Documented shape of `EventRecord.metadata` for events the Core emits
+         *     itself (item #7 in dashboard feedback). Not the runtime type of `metadata`
+         *     — that stays free-form `Value` because custom app events define their own
+         *     keys — but a typed reference the dashboard can cast to. All fields optional;
+         *     which appear depends on `event_type`.
+         */
+        CoreEventMetadata: {
+            /**
+             * Format: uuid
+             * @description API key id on `api_key_issued` / `api_key_revoked`.
+             */
+            api_key_id?: string | null;
+            /** @description Service-account email on `api_key_issued`. */
+            email?: string | null;
+            /** @description Top-level keys touched by a metadata patch (`*_metadata_updated`). */
+            keys?: string[] | null;
+            /** @description New `account_status` on admin status changes. */
+            new_status?: string | null;
+            /** @description Blocking/banning reason (`admin_user_blocked` / `admin_user_banned`). */
+            reason?: string | null;
+            /** @description Granted scopes on `api_key_issued`. */
+            scopes?: string[] | null;
+            /** @description Target user's email on admin status changes. */
+            target_email?: string | null;
+        };
         CreateApiKeyRequest: {
             /** Format: uuid */
             app_id?: string | null;
             /** Format: uuid */
             ecosystem_id: string;
             email: string;
+            /**
+             * Format: date-time
+             * @description Optional expiry (RFC 3339). Omit for a non-expiring key. Must be in
+             *     the future; the Core rejects the key on every use once it passes.
+             */
+            expires_at?: string | null;
             /** Format: uuid */
             identity_pool_id: string;
             scopes: string[];
@@ -594,6 +751,12 @@ export interface components {
             /** Format: uuid */
             identity_pool_id?: string | null;
             ip?: string | null;
+            /**
+             * @description Free-form JSON. Custom app events carry arbitrary keys; Core-emitted
+             *     events (`admin_*`, `login_*`, `*_metadata_updated`, `api_key_*`) carry
+             *     the well-known shape documented by [`CoreEventMetadata`] — the dashboard
+             *     can narrow to it by `event_type`.
+             */
             metadata: unknown;
             /** Format: uuid */
             session_id?: string | null;
@@ -656,6 +819,16 @@ export interface components {
             limit?: number | null;
             /** Format: int64 */
             offset?: number | null;
+            /**
+             * Format: date-time
+             * @description Inclusive lower bound on `created_at` (RFC 3339, e.g. last-24h queries).
+             */
+            since?: string | null;
+            /**
+             * Format: date-time
+             * @description Inclusive upper bound on `created_at` (RFC 3339).
+             */
+            until?: string | null;
             /** Format: uuid */
             user_id?: string | null;
         };
@@ -668,6 +841,9 @@ export interface components {
             limit?: number | null;
             /** Format: int64 */
             offset?: number | null;
+            /** @description Case-insensitive substring match on email (`?q=term`). */
+            q?: string | null;
+            status?: null | components["schemas"]["AccountStatus"];
         };
         LoginRequest: {
             email: string;
@@ -680,6 +856,45 @@ export interface components {
             refresh_token: string;
             token_type: string;
         };
+        /**
+         * @description The caller's own identity, as seen through the token it presented.
+         *     Identity-level fields come from `users`; `role`/`metadata` come from the
+         *     `app_memberships` row for the token's app (absent on platform-admin
+         *     tokens, which are not scoped to an app).
+         */
+        MeResponse: {
+            account_status: components["schemas"]["AccountStatus"];
+            actor_kind: components["schemas"]["ActorKind"];
+            /**
+             * Format: uuid
+             * @description App the token is scoped to; `null` for platform-admin tokens.
+             */
+            app_id?: string | null;
+            /** Format: date-time */
+            created_at: string;
+            /** Format: uuid */
+            ecosystem_id: string;
+            email: string;
+            /** Format: date-time */
+            email_verified_at?: string | null;
+            /** Format: uuid */
+            id: string;
+            /** Format: uuid */
+            identity_pool_id: string;
+            /** Format: date-time */
+            last_login_at?: string | null;
+            /**
+             * @description The app's per-app data (`app_memberships.local_metadata`) — where an
+             *     integrator keeps its display name, its own role, etc. `{}` when unset.
+             */
+            metadata: unknown;
+            role?: null | components["schemas"]["MembershipRole"];
+            scopes: string[];
+            /** Format: uuid */
+            session_id: string;
+        };
+        /** @enum {string} */
+        MembershipRole: "member" | "app_admin";
         PaginationQuery: {
             /** Format: int64 */
             limit?: number | null;
@@ -695,6 +910,15 @@ export interface components {
         };
         RegisterRequest: {
             email: string;
+            /**
+             * @description Optional per-app signup profile, stored as the membership's
+             *     `local_metadata` — e.g. `{"display_name": "Ana"}`. Read back from
+             *     `GET /v1/auth/me`.
+             *
+             *     **Untrusted:** the registrant supplies this, so never use it for
+             *     authorization. Gateward's own `role` is not settable here.
+             */
+            metadata?: unknown;
             password: string;
         };
         RegisterResponse: {
@@ -709,6 +933,10 @@ export interface components {
         ResetPasswordRequest: {
             new_password: string;
             token: string;
+        };
+        ScopesResponse: {
+            /** @description The catalog of scopes a service-account API key may be granted. */
+            scopes: string[];
         };
         SendEventRequest: {
             /**
@@ -925,6 +1153,10 @@ export interface operations {
                 app_id?: string | null;
                 user_id?: string | null;
                 event_type?: string | null;
+                /** @description Inclusive lower bound on `created_at` (RFC 3339, e.g. last-24h queries). */
+                since?: string | null;
+                /** @description Inclusive upper bound on `created_at` (RFC 3339). */
+                until?: string | null;
                 limit?: number | null;
                 offset?: number | null;
             };
@@ -941,6 +1173,33 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["EventRecord"][];
+                };
+            };
+            /** @description Not platform admin */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    list_scopes: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Allowed API-key scopes */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ScopesResponse"];
                 };
             };
             /** @description Not platform admin */
@@ -992,6 +1251,13 @@ export interface operations {
             query?: {
                 ecosystem_id?: string | null;
                 identity_pool_id?: string | null;
+                /**
+                 * @description Filter by account status (e.g. `blocked`) — server-side so the
+                 *     dashboard doesn't fetch everything to show blocked users.
+                 */
+                status?: null | components["schemas"]["AccountStatus"];
+                /** @description Case-insensitive substring match on email (`?q=term`). */
+                q?: string | null;
                 limit?: number | null;
                 offset?: number | null;
             };
@@ -1288,6 +1554,48 @@ export interface operations {
             };
         };
     };
+    delete_app: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description App ID */
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description App deleted */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Not platform admin */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description App not found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description App has dependent memberships/sessions/keys/events */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
     forgot_password: {
         parameters: {
             query?: never;
@@ -1388,6 +1696,47 @@ export interface operations {
             };
             /** @description Not authenticated */
             401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    whoami: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description The authenticated caller's identity */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["MeResponse"];
+                };
+            };
+            /** @description Not authenticated */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description API-key auth has no end user */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description User no longer exists */
+            404: {
                 headers: {
                     [name: string]: unknown;
                 };
@@ -1496,7 +1845,7 @@ export interface operations {
                     "application/json": components["schemas"]["RegisterResponse"];
                 };
             };
-            /** @description Validation error */
+            /** @description Validation error (bad email/password, or metadata not an object / over 4 KiB) */
             400: {
                 headers: {
                     [name: string]: unknown;
@@ -1683,6 +2032,48 @@ export interface operations {
             };
         };
     };
+    delete_ecosystem: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description Ecosystem ID */
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Ecosystem deleted */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Not platform admin */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Ecosystem not found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description System ecosystem, or has dependent resources */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
     list_events: {
         parameters: {
             query?: {
@@ -1691,6 +2082,10 @@ export interface operations {
                 app_id?: string | null;
                 user_id?: string | null;
                 event_type?: string | null;
+                /** @description Inclusive lower bound on `created_at` (RFC 3339, e.g. last-24h queries). */
+                since?: string | null;
+                /** @description Inclusive upper bound on `created_at` (RFC 3339). */
+                until?: string | null;
                 limit?: number | null;
                 offset?: number | null;
             };
@@ -1822,6 +2217,48 @@ export interface operations {
             };
             /** @description Not platform admin */
             403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    delete_identity_pool: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description Identity pool ID */
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Identity pool deleted */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Not platform admin */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Identity pool not found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description System pool, or has dependent apps/users */
+            409: {
                 headers: {
                     [name: string]: unknown;
                 };

@@ -32,8 +32,14 @@ const auth = new GatewardAuth({
   storage: createWebStorage(), // opcional; por defecto en memoria
 });
 
-await auth.register("user@app.com", "s3cret");
+// El perfil de alta (nombre, locale…) viaja en el mismo registro.
+await auth.register("user@app.com", "s3cret", {
+  metadata: { display_name: "Ana", locale: "es-MX" },
+});
 await auth.login("user@app.com", "s3cret");
+
+// Identidad del caller: { id, email, role, metadata, ... }. Cacheada por sesión.
+const user = await auth.getUser();
 
 // getAccessToken() refresca solo si el token está por expirar (single-flight).
 const token = await auth.getAccessToken();
@@ -47,6 +53,47 @@ await auth.logout(); // revoca en el server y limpia el storage (best-effort)
 
 `GatewardAuth` guarda el par de tokens en un `TokenStorage` pluggable
 (`MemoryStorage` por defecto, `createWebStorage()` para `localStorage`, o el tuyo).
+
+### Usuario actual
+
+`getUser()` pega a `GET /v1/auth/me` y devuelve `{ id, email, account_status,
+role, metadata, scopes, ... }` — la identidad más el membership en el app del
+token. Se cachea mientras dure la sesión (las llamadas concurrentes comparten
+un solo request); pasá `{ force: true }` después de escribir metadata.
+
+`role` es el rol propio de Gateward (`member` / `app_admin`). El rol de **tu**
+app, junto con el nombre visible, vive en `metadata` — es lo que mandaste en
+`register()` o lo que tu backend escribió con `updateUserMetadata()`.
+
+> `metadata` la escribe el usuario al registrarse. Es texto que él eligió:
+> úsala para mostrar, nunca para autorizar.
+
+`getClaims()` decodifica el access token actual sin round-trip. **No están
+verificados** — vienen del storage de este mismo cliente, así que solo sirven
+como pista de UI. Un backend que recibe un token lo verifica con
+`GatewardServer.verifyToken`.
+
+### Cambios de estado de sesión
+
+```ts
+const off = auth.onAuthStateChange(({ event, tokens }) => {
+  if (event === "session_expired") router.push("/login"); // forzado por el server
+});
+```
+
+| Evento | Cuándo |
+|---|---|
+| `signed_in` | `login()` persistió un par nuevo |
+| `token_refreshed` | el par rotó (mismo usuario) |
+| `signed_out` | `logout()` explícito |
+| `session_expired` | el refresh token murió del lado del server — la sesión local ya está borrada |
+
+`session_expired` está separado de `signed_out` a propósito: el primero es el
+server tirando la sesión bajo los pies de la app (redirigí ya), el segundo es
+el usuario yéndose. Sin esta señal el SDK limpia el storage en silencio y la UI
+sigue pintando una sesión que no existe.
+
+Un listener que tira error queda aislado: no rompe el pipeline de tokens.
 
 Manda automáticamente un **`X-Gateward-Device-Id`** estable (generado y persistido
 en `localStorage` en el browser) para que el Core reconozca el mismo dispositivo entre

@@ -5,6 +5,11 @@ export { GatewardAuth, type GatewardAuthOptions } from "./auth/client.js";
 // 401 retry, logout, authedRequest). Extend it to build an admin/platform
 // client outside this package without shipping admin surface to integrators.
 export { AuthSession, type SessionOptions } from "./core/session.js";
+export type {
+  AuthEvent,
+  AuthStateChange,
+  AuthStateListener,
+} from "./core/events.js";
 export { GatewardError } from "./core/errors.js";
 export {
   MemoryStorage,
@@ -26,6 +31,7 @@ export {
 } from "./jwt/verify.js";
 export type {
   GatewardClaims,
+  GatewardUser,
   TokenResponse,
   RegisterResponse,
   SessionSummary,

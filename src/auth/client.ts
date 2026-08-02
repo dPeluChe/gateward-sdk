@@ -58,10 +58,23 @@ export class GatewardAuth extends AuthSession {
     );
   }
 
-  /** Register a user into this app. Does not log in (no tokens issued). */
-  register(email: string, password: string): Promise<RegisterResponse> {
+  /** Register a user into this app. Does not log in (no tokens issued) — the
+   *  Core requires email verification first.
+   *
+   *  `metadata` is the signup profile (display name, locale, …), stored on the
+   *  membership and returned by {@link getUser}. It is user-supplied, so the
+   *  Core never derives authorization from it and neither should you. */
+  register(
+    email: string,
+    password: string,
+    opts: { metadata?: Record<string, unknown> } = {},
+  ): Promise<RegisterResponse> {
     return this.http.request<RegisterResponse>("POST", "/v1/auth/register", {
-      body: { email, password },
+      body: {
+        email,
+        password,
+        ...(opts.metadata ? { metadata: opts.metadata } : {}),
+      },
     });
   }
 
