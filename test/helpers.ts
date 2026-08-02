@@ -20,16 +20,21 @@ export function stubFetch(
 ): { fetch: FetchLike; calls: StubCall[] } {
   const calls: StubCall[] = [];
   let i = 0;
-  const fetch = (async (input: string | URL, init?: RequestInit) => {
+  // Normalize through `Request` exactly as a real fetch does, so callers can
+  // pass a Request, a `Headers` instance, or a plain object and the recorded
+  // call looks the same either way.
+  const fetch = (async (input: RequestInfo | URL, init?: RequestInit) => {
+    const req = new Request(input as RequestInfo, init);
     const headers: Record<string, string> = {};
-    for (const [k, v] of Object.entries(init?.headers ?? {})) {
-      headers[k.toLowerCase()] = String(v);
-    }
+    req.headers.forEach((v, k) => {
+      headers[k.toLowerCase()] = v;
+    });
+    const raw = await req.text();
     const call: StubCall = {
-      url: String(input),
-      method: init?.method ?? "GET",
+      url: req.url,
+      method: req.method,
       headers,
-      body: init?.body ? JSON.parse(String(init.body)) : undefined,
+      body: raw ? JSON.parse(raw) : undefined,
     };
     calls.push(call);
     const spec = responses[i++] ?? {};

@@ -10,6 +10,10 @@ export type {
   AuthStateChange,
   AuthStateListener,
 } from "./core/events.js";
+export {
+  createAuthedFetch,
+  type AuthedFetchOptions,
+} from "./core/authed-fetch.js";
 export { GatewardError } from "./core/errors.js";
 export {
   MemoryStorage,
