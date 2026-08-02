@@ -1,6 +1,5 @@
-// Server-side gating for SSR frameworks. Deliberately imports nothing from
-// `next` — it speaks only Web-standard Request/Response, so the same helper
-// works in Next middleware, a Remix loader, SvelteKit hooks, or Hono.
+// Imports nothing from `next`: Web-standard Request/Response only, so this
+// also works in Remix, SvelteKit or Hono. See docs/ARCHITECTURE/SESSION.md.
 import {
   SESSION_MARKER_COOKIE,
   hasSessionMarker,
@@ -13,8 +12,7 @@ export {
   type SessionMarkerOptions,
 } from "./core/session-marker.js";
 
-/** The slice of a request this needs — satisfied by `NextRequest`, `Request`,
- *  and anything else Web-standard. */
+/** Satisfied by `NextRequest`, `Request`, and anything Web-standard. */
 export interface GatewardRequest {
   url: string;
   headers: { get(name: string): string | null };
@@ -37,24 +35,11 @@ export interface MiddlewareOptions {
   status?: number;
 }
 
-/** Build a middleware that redirects on the **marker cookie** alone.
+/** Middleware that redirects on the marker cookie alone. Returns `undefined`
+ *  when the request should proceed.
  *
- *  This is a rendering optimization, not a security boundary: it decides
- *  whether the server bothers rendering an authed layout. The cookie is
- *  forgeable and carries no credential, so forging it only yields an empty
- *  shell — every data call still needs a real token. Authorize in your API,
- *  never here.
- *
- *  ```ts
- *  // middleware.ts
- *  export const middleware = createGatewardMiddleware({
- *    protect: ["/dashboard", "/settings"],
- *    authenticatedHome: "/dashboard",
- *  });
- *  ```
- *
- *  Returns `undefined` when the request should proceed — in Next, `return
- *  gatewardMiddleware(request) ?? NextResponse.next()`. */
+ *  A rendering optimization, NOT a security boundary — authorize in your API.
+ *  See docs/ARCHITECTURE/SESSION.md. */
 export function createGatewardMiddleware(opts: MiddlewareOptions) {
   const loginPath = opts.loginPath ?? "/login";
   const returnTo = opts.returnTo === undefined ? "next" : opts.returnTo;
@@ -74,8 +59,6 @@ export function createGatewardMiddleware(opts: MiddlewareOptions) {
     );
 
     if (authed) {
-      // Bounce a signed-in visitor off the login screen, but only when the
-      // app said where to send them.
       if (opts.authenticatedHome && isSamePath(url.pathname, loginPath)) {
         return redirect(new URL(opts.authenticatedHome, url), status);
       }
@@ -86,7 +69,7 @@ export function createGatewardMiddleware(opts: MiddlewareOptions) {
 
     const target = new URL(loginPath, url);
     if (returnTo) {
-      // Path + query only: a full URL here would let an open redirect through.
+      // Path + query only — a full URL would allow an open redirect.
       target.searchParams.set(returnTo, url.pathname + url.search);
     }
     return redirect(target, status);
@@ -100,8 +83,7 @@ function redirect(target: URL, status: number): Response {
   });
 }
 
-/** `/dashboard` protects `/dashboard` and `/dashboard/x`, but never
- *  `/dashboard-public`. */
+/** Matches whole segments: `/dashboard` never protects `/dashboard-public`. */
 function prefixMatcher(prefixes: string[]): (pathname: string) => boolean {
   return (pathname) =>
     prefixes.some(

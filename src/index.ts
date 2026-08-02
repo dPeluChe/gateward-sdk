@@ -20,6 +20,7 @@ export {
   createWebStorage,
   type TokenStorage,
   type TokenSet,
+  type StorageChangeListener,
 } from "./core/storage.js";
 export {
   SESSION_MARKER_COOKIE,

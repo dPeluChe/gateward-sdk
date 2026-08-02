@@ -97,6 +97,10 @@ sigue pintando una sesión que no existe.
 
 Un listener que tira error queda aislado: no rompe el pipeline de tokens.
 
+Con `createWebStorage()` los eventos también llegan **desde otras pestañas**:
+si el usuario cierra sesión en una, las demás se enteran. Se apaga con
+`syncTabs: false`.
+
 ### Llamar a tu propia API
 
 `createFetch()` devuelve un `fetch` firmado con la sesión: adjunta el Bearer,
@@ -256,6 +260,12 @@ new GatewardAuth({ baseUrl, appId, retry: { maxRetries: 3, baseDelayMs: 200 } })
 
 `GatewardAuth` también expone: `forgotPassword(email)`, `resetPassword(token, newPassword)`,
 `verifyEmail(token)`, `resendVerificationEmail(email)`.
+
+## Decisiones de diseño
+
+El *por qué* detrás del ciclo de sesión (eventos, cache de `getUser`, alcance
+del token en `createFetch`, cookie marcadora, sync entre pestañas) está en
+[`docs/ARCHITECTURE/SESSION.md`](./docs/ARCHITECTURE/SESSION.md).
 
 ## Regenerar tipos desde el contrato
 

@@ -20,12 +20,14 @@ export interface SessionOptions {
   storage?: TokenStorage;
   /** Refresh this many seconds before the access token expires (default 30). */
   refreshSkewSec?: number;
+  /** Follow sign-in/out from other tabs when the storage supports it
+   *  (default `true`). */
+  syncTabs?: boolean;
 }
 
 /** Shared token lifecycle for every authenticated client: persistence,
- *  single-flight automatic refresh (`/v1/auth/refresh` is app-agnostic),
- *  logout, and a 401-retrying authed request. Subclasses add their own
- *  login method (app login vs platform login) and any scoped helpers. */
+ *  single-flight refresh, logout, and a 401-retrying authed request.
+ *  Design notes in docs/ARCHITECTURE/SESSION.md. */
 export abstract class AuthSession {
   protected readonly http: HttpClient;
   private readonly storage: TokenStorage;
@@ -33,23 +35,40 @@ export abstract class AuthSession {
   /** Single-flight guard so concurrent calls trigger at most one refresh. */
   private refreshInFlight: Promise<TokenSet> | null = null;
   private readonly emitter = new AuthStateEmitter();
-  /** Identity is stable for the life of a session, so `/v1/auth/me` is worth
-   *  caching — cleared whenever the session itself changes. */
   private cachedUser: GatewardUser | null = null;
   private userInFlight: Promise<GatewardUser> | null = null;
+
+  private unsubscribeStorage: (() => void) | null = null;
 
   protected constructor(http: HttpClient, opts: SessionOptions = {}) {
     this.http = http;
     this.storage = opts.storage ?? new MemoryStorage();
     this.refreshSkewSec = opts.refreshSkewSec ?? 30;
+    if (opts.syncTabs !== false) this.watchOtherTabs();
   }
 
-  /** Subscribe to session transitions (`signed_in`, `token_refreshed`,
-   *  `signed_out`, `session_expired`). Returns an unsubscribe function.
-   *
-   *  `session_expired` is what an app binds its forced-logout path to: the
-   *  refresh token died server-side, so the local session is already gone by
-   *  the time the listener runs. */
+  /** Stop following other tabs. Only needed if the client outlives its use. */
+  dispose(): void {
+    this.unsubscribeStorage?.();
+    this.unsubscribeStorage = null;
+  }
+
+  private watchOtherTabs(): void {
+    this.unsubscribeStorage =
+      this.storage.subscribe?.((tokens, previous) => {
+        this.cachedUser = null;
+        if (!tokens) {
+          this.emitter.emit({ event: "signed_out", tokens: null });
+        } else if (!previous) {
+          this.emitter.emit({ event: "signed_in", tokens });
+        } else if (tokens.refreshToken !== previous.refreshToken) {
+          this.emitter.emit({ event: "token_refreshed", tokens });
+        }
+      }) ?? null;
+  }
+
+  /** Subscribe to session transitions; returns an unsubscribe. Bind forced
+   *  logout to `session_expired`. */
   onAuthStateChange(listener: AuthStateListener): () => void {
     return this.emitter.subscribe(listener);
   }
@@ -72,9 +91,8 @@ export abstract class AuthSession {
     }
   }
 
-  /** The caller's identity (`GET /v1/auth/me`) — `{id, email, role, metadata}`.
-   *  Cached for the session; pass `{ force: true }` after writing metadata.
-   *  Concurrent calls share one request. */
+  /** The caller's identity (`GET /v1/auth/me`). Cached for the session;
+   *  `{ force: true }` refetches. Concurrent calls share one request. */
   async getUser(opts: { force?: boolean } = {}): Promise<GatewardUser> {
     if (!opts.force && this.cachedUser) return this.cachedUser;
     if (!opts.force && this.userInFlight) return this.userInFlight;
@@ -90,22 +108,14 @@ export abstract class AuthSession {
     return this.userInFlight;
   }
 
-  /** A `fetch` bound to this session for calling **your own** API: attaches
-   *  the bearer, refreshes when the token is near expiry, retries once on a
-   *  401. Pass it to any client that takes a `fetch`.
-   *
-   *  Scope it with `{ origins: [...] }` if the same fetch also reaches third
-   *  parties — otherwise you'd send them your access token. */
+  /** A `fetch` bound to this session, for calling your own API. Scope it with
+   *  `{ origins }` unless it only ever reaches your backend. */
   createFetch(opts: AuthedFetchOptions = {}): FetchLike {
     return createAuthedFetch(this, opts);
   }
 
-  /** Claims of the current access token, decoded locally (no round-trip).
-   *  Refreshes first if the token is near expiry.
-   *
-   *  These are NOT verified — the token came from this client's own storage,
-   *  so they are only safe as UI hints. A backend must verify a token it
-   *  received with `GatewardServer.verifyToken`. */
+  /** Claims of the current access token, decoded locally. NOT verified — UI
+   *  hints only; a backend uses `GatewardServer.verifyToken`. */
   async getClaims(): Promise<GatewardClaims> {
     return decodeClaims(await this.getAccessToken());
   }
@@ -161,14 +171,12 @@ export abstract class AuthSession {
       expiresAt: expiryOf(tokens),
     };
     await this.storage.set(set);
-    // A refresh rotates tokens for the same identity; a login can be a
-    // different user entirely, so only that invalidates the cached user.
+    // A login can be a different user; a refresh never is.
     if (event !== "token_refreshed") this.cachedUser = null;
     this.emitter.emit({ event, tokens: set });
     return set;
   }
 
-  /** Drop every trace of the session locally and announce it. */
   private forget(event: Extract<AuthEvent, "signed_out" | "session_expired">) {
     this.cachedUser = null;
     this.emitter.emit({ event, tokens: null });
@@ -200,10 +208,8 @@ export abstract class AuthSession {
         body: { refresh_token: current.refreshToken },
       });
     } catch (err) {
-      // A dead/rotated refresh token means the session is gone — drop it so
-      // the app can re-auth instead of looping on a doomed token, and tell
-      // subscribers, or the UI keeps rendering an authenticated shell over a
-      // session that no longer exists.
+      // Dead refresh token: drop the session and say so, or the UI keeps
+      // rendering an authenticated shell over nothing.
       if (err instanceof GatewardError && err.status === 401) {
         await this.storage.clear();
         this.forget("session_expired");
