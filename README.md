@@ -8,6 +8,7 @@ OpenAPI** (`GET /api-docs/openapi.json`), no a mano.
   propias, y verificación local de JWT (ES256 vía JWKS).
 - `@gateward/sdk/server` — server-to-server con API key (`X-API-Key`): `sendEvent`,
   `listEvents`, `getUserMetadata`/`updateUserMetadata`, y `verifyToken`.
+- `@gateward/sdk/react` — `<GatewardProvider>` + `useAuth()` / `useUser()`.
 
 > **Alcance:** este SDK cubre la superficie de **cliente/integrador** solamente. Las
 > operaciones de **admin/control-plane** (gestión de ecosystems, usuarios, api keys, ver
@@ -100,6 +101,57 @@ en `localStorage` en el browser) para que el Core reconozca el mismo dispositivo
 sesiones, y un **`X-Gateward-Timezone`** (IANA, detectado vía `Intl`). Controlables con
 `deviceId` / `timezone` (o `false` para desactivar). El Core, además, captura IP real
 (behind proxy) + navegador/OS del User-Agent en cada login/refresh.
+
+## React
+
+`react` es un **peer dependency opcional**: solo hace falta si importás este
+subpath.
+
+```tsx
+import { GatewardProvider, useAuth } from "@gateward/sdk/react";
+
+<GatewardProvider
+  config={{ baseUrl, appId, storage: createWebStorage() }}
+  onSessionExpired={() => router.push("/login")}
+>
+  <App />
+</GatewardProvider>;
+
+function Nav() {
+  const { user, status, isAuthenticated, login, logout, error } = useAuth();
+  if (status === "loading") return <Spinner />;      // ver nota abajo
+  if (!isAuthenticated) return <LoginForm onSubmit={login} error={error} />;
+  return <span>{String(user!.metadata.display_name ?? user!.email)}</span>;
+}
+```
+
+Pasá `config` (el provider construye el cliente) o `auth` (un `GatewardAuth`
+que ya tenés, para compartirlo con código fuera de React).
+
+| Del contexto | Qué es |
+|---|---|
+| `status` | `"loading"` \| `"authenticated"` \| `"unauthenticated"` |
+| `user` | `GatewardUser \| null` |
+| `isAuthenticated` | atajo de `status === "authenticated"` |
+| `error` | último fallo de `login`/`register`/`logout`; se limpia al reintentar |
+| `login`, `register`, `logout`, `refreshUser` | acciones |
+| `auth` | el cliente, como escape hatch |
+
+**`loading` importa.** Es la ventana de bootstrap: al montar, el provider
+consulta `/v1/auth/me`. Tratar "todavía no hay user" como "no logueado" hace
+que la pantalla de login parpadee en cada reload.
+
+Un 401 en el bootstrap es el camino normal de "no hay sesión" y **no** llena
+`error`. Cualquier otro fallo (500, red) sí queda en `error` y no se disfraza
+de "deslogueado" — si no, un blip del backend te manda una sesión válida a
+`/login`.
+
+`onSessionExpired` corre **solo** cuando el server tira la sesión (refresh
+token muerto), no en un `logout()` explícito. Es donde una app Next hace su
+hard redirect para que el middleware reevalúe.
+
+`register()` no cambia el estado de sesión: el Core no emite tokens hasta que
+el email está verificado.
 
 ## Server-to-server (API key)
 
@@ -196,7 +248,7 @@ pnpm gen:types
 
 | Script | Qué hace |
 |---|---|
-| `pnpm build` | Bundle ESM+CJS+d.ts con tsup |
+| `pnpm build` | Bundle ESM+CJS+d.ts con tsup (`index`, `server`, `react`) |
 | `pnpm test` | Suite vitest |
 | `pnpm typecheck` | `tsc --noEmit` |
 | `pnpm gen:types` | `openapi.json` → `src/generated/api.ts` |
