@@ -18,18 +18,16 @@ function tokenResponse(exp: number): StubResponse {
 
 const meResponse = (email = "ana@app.com"): StubResponse => ({
   json: {
-    id: "user-1",
+    user_id: "user-1",
     email,
+    email_verified: true,
     account_status: "active",
     actor_kind: "human",
-    created_at: "2026-08-01T00:00:00Z",
-    ecosystem_id: "eco-1",
-    identity_pool_id: "pool-1",
     app_id: APP,
-    session_id: "sess-1",
-    role: "member",
+    membership_role: "member",
+    scopes: ["session:read_own", "users:write_own"],
     metadata: { display_name: "Ana" },
-    scopes: ["session:read_own"],
+    created_at: "2026-08-01T00:00:00Z",
   },
 });
 
@@ -49,7 +47,7 @@ describe("getUser", () => {
     expect(calls[1]!.url).toBe(`${BASE}/v1/auth/me`);
     expect(calls[1]!.headers["authorization"]).toMatch(/^Bearer /);
     expect(user.email).toBe("ana@app.com");
-    expect(user.role).toBe("member");
+    expect(user.membership_role).toBe("member");
     expect(user.metadata).toEqual({ display_name: "Ana" });
   });
 
@@ -225,23 +223,83 @@ describe("onAuthStateChange", () => {
   });
 });
 
-describe("register", () => {
-  it("sends the signup profile as metadata", async () => {
-    const { fetch, calls } = stubFetch([{ status: 202, json: { message: "ok" } }]);
+describe("self-service", () => {
+  it("updateProfile merges metadata and refreshes the cache", async () => {
+    const merged = meResponse();
+    (merged.json as { metadata: Record<string, unknown> }).metadata = {
+      display_name: "Ana Q",
+    };
+    const { fetch, calls } = stubFetch([
+      tokenResponse(future()),
+      meResponse(),
+      merged,
+    ]);
     const auth = new GatewardAuth({ baseUrl: BASE, appId: APP, fetch });
+    await auth.login("ana@app.com", "pw");
+    await auth.getUser();
 
-    await auth.register("ana@app.com", "correcthorse123", {
-      metadata: { display_name: "Ana", locale: "es-MX" },
-    });
+    const updated = await auth.updateProfile({ display_name: "Ana Q" });
 
-    expect(calls[0]!.body).toEqual({
-      email: "ana@app.com",
-      password: "correcthorse123",
-      metadata: { display_name: "Ana", locale: "es-MX" },
+    expect(calls[2]!.method).toBe("PATCH");
+    expect(calls[2]!.url).toBe(`${BASE}/v1/auth/me`);
+    expect(calls[2]!.body).toEqual({ metadata: { display_name: "Ana Q" } });
+    expect(updated.metadata).toEqual({ display_name: "Ana Q" });
+    // Cached, so no extra /me round-trip.
+    expect((await auth.getUser()).metadata).toEqual({ display_name: "Ana Q" });
+    expect(calls.length).toBe(3);
+  });
+
+  it("changePassword sends both passwords", async () => {
+    const { fetch, calls } = stubFetch([tokenResponse(future()), { status: 204 }]);
+    const auth = new GatewardAuth({ baseUrl: BASE, appId: APP, fetch });
+    await auth.login("ana@app.com", "pw");
+
+    await auth.changePassword("old-secret-1", "new-secret-2");
+
+    expect(calls[1]!.url).toBe(`${BASE}/v1/auth/change-password`);
+    expect(calls[1]!.body).toEqual({
+      current_password: "old-secret-1",
+      new_password: "new-secret-2",
     });
   });
 
-  it("omits metadata entirely when not given", async () => {
+  it("revokeAllSessions keeps the current session by default", async () => {
+    const { fetch, calls } = stubFetch([
+      tokenResponse(future()),
+      { json: { revoked: 3 } },
+    ]);
+    const auth = new GatewardAuth({ baseUrl: BASE, appId: APP, fetch });
+    await auth.login("ana@app.com", "pw");
+
+    const revoked = await auth.revokeAllSessions();
+
+    expect(revoked).toBe(3);
+    expect(calls[1]!.url).toBe(`${BASE}/v1/sessions`);
+    expect(calls[1]!.method).toBe("DELETE");
+    // Still signed in locally.
+    expect(await auth.getAccessToken()).toContain(".");
+  });
+
+  /// Revoking our own session leaves the stored tokens dead, so the local
+  /// session has to go too or the app keeps rendering as signed in.
+  it("revokeAllSessions with includeCurrent drops the local session", async () => {
+    const { fetch, calls } = stubFetch([
+      tokenResponse(future()),
+      { json: { revoked: 4 } },
+    ]);
+    const auth = new GatewardAuth({ baseUrl: BASE, appId: APP, fetch });
+    await auth.login("ana@app.com", "pw");
+    const seen: AuthStateChange[] = [];
+    auth.onAuthStateChange((c) => seen.push(c));
+
+    await auth.revokeAllSessions({ includeCurrent: true });
+
+    expect(calls[1]!.url).toBe(`${BASE}/v1/sessions?include_current=true`);
+    expect(seen.map((c) => c.event)).toEqual(["signed_out"]);
+    await expect(auth.getAccessToken()).rejects.toThrow();
+  });
+
+  it("register sends only the credentials", async () => {
     const { fetch, calls } = stubFetch([{ status: 202, json: { message: "ok" } }]);
     const auth = new GatewardAuth({ baseUrl: BASE, appId: APP, fetch });
 
