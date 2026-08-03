@@ -14,6 +14,8 @@ cubierto es admin/control-plane, que por diseño vive en el dashboard.
 
 `main`: PRs #9-#16, 108 tests, 4 entries (`index`, `server`, `react`, `next`).
 
+`main` en CI verde sobre Node 20 y 22.
+
 Próximo paso: **publicar** y que la app piloto lo aplique. Su feedback manda
 sobre el resto del backlog.
 
@@ -38,8 +40,9 @@ sobre el resto del backlog.
 ### PILOT-001: Primera integración real `added: 2026-08-03`
 - [ ] La aplica el equipo de la app piloto; nosotros respondemos su feedback.
 - [ ] Análisis previo en `GUIDES/MIGRATION.md`. Si la piloto corre sobre Convex,
-  el riesgo principal es que sus queries/mutations no pueden hacer `fetch`, así
-  que no verifican un JWT por sí solas — depende de OIDC-001 (ver abajo).
+  sus queries/mutations no pueden hacer `fetch` y no verifican un JWT por sí
+  solas — se resuelve con el discovery OIDC del Core y `convex/auth.config.ts`,
+  con `applicationID` = el UUID del app.
 
 ---
 
@@ -47,7 +50,8 @@ sobre el resto del backlog.
 
 ### PY-001: SDK de Python `added: 2026-08-03`
 - [ ] Verificación de token (JWKS + ES256) y cliente de eventos para backends
-  Python (Django/DRF, FastAPI).
+  Python (Django/DRF, FastAPI). **Es el único bloqueador que queda en la guía
+  de migración.**
 - [ ] **Diferido a propósito**: ninguno de sus consumidores está migrando
   todavía, y la app piloto es TypeScript. Se retoma cuando la primera
   integración esté cerrada.
@@ -56,29 +60,28 @@ sobre el resto del backlog.
 
 ### E2E-001: Validar contra un Core desplegado `added: 2026-08-03`
 - [ ] Todo el suite corre contra stubs. Falta ejercitar el ciclo completo contra
-  `gateward.fondor.space` (pendiente de redespliegue) con dos apps: una con
-  `require_email_verification` y otra sin.
+  un Core real con dos apps: una con `require_email_verification` y otra sin.
+- [ ] **Bloqueado por el redespliegue de prod**, que aún no tiene ninguno de los
+  diez PRs. Al desplegar, `JWT_ISSUER` tiene que ser la URL pública o el
+  discovery OIDC no sirve — y el error se ve del lado del cliente, no del server.
 
 ---
 
 ## Bloqueado por el Core
 
-Reportado al equipo del Core; el SDK no puede avanzar sin esto.
+**Nada.** Los diez pedidos se entregaron y están integrados en el SDK:
+SELF-001, APP-POLICY-001, ROLE-001, OIDC-001, HASH-IMPORT-001, SELF-DELETE-001,
+REGISTER-PROFILE-001, EMAIL-CHANGE-001, APP-CONFIG-001 y ABUSE-TENANT-001.
 
-| Pedido | Qué desbloquea |
-|---|---|
-| **OIDC-001** — `/.well-known/openid-configuration` | Convex valida JWTs de un proveedor OIDC de forma nativa dentro de queries. Sin esto, cada app Convex necesita tabla espejo y action de intercambio |
-| **HASH-IMPORT-001** — importar hash legacy, re-hash al primer login | Migrar usuarios existentes sin reset masivo ni login dual |
-| **SELF-DELETE-001** — borrar la propia cuenta | Requisito de GDPR y App Store. No existe en el contrato |
-| `register` con perfil en el alta | apps que piden nombre o alias en el mismo paso |
-| **EMAIL-CHANGE-001** | apps con edición de email en el perfil |
+Lo único que falta del lado del Core es **operativo**: redesplegar prod, que
+todavía corre sin ninguno de esos cambios.
 
 ---
 
 ## Backlog
 
 ### RBAC-001: Helpers de roles `added: 2026-08-03`
-- [ ] ROLE-001 del Core ya permite asignar `app_admin`, y el SDK expone
+- [ ] El Core ya permite asignar `app_admin`, y el SDK expone
   `listMembers`/`setMemberRole`. Falta decidir si el SDK opina sobre permisos
   (matriz rol → permiso) o eso se queda en cada app.
 - [ ] Varias apps auditadas tenían matrices RBAC casi idénticas — señal de que
