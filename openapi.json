@@ -34,6 +34,29 @@
         ]
       }
     },
+    "/.well-known/openid-configuration": {
+      "get": {
+        "tags": [
+          "well-known"
+        ],
+        "operationId": "openid_configuration",
+        "responses": {
+          "200": {
+            "description": "OIDC discovery document",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/OpenIdConfiguration"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {}
+        ]
+      }
+    },
     "/v1/admin/api-keys": {
       "get": {
         "tags": [
@@ -504,6 +527,53 @@
         "security": [
           {
             "bearer": []
+          }
+        ]
+      }
+    },
+    "/v1/admin/users/import": {
+      "post": {
+        "tags": [
+          "admin"
+        ],
+        "operationId": "import_users",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ImportUsersRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Per-user outcome; a rejected row does not fail the batch",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ImportUsersResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Empty or oversized batch"
+          },
+          "403": {
+            "description": "Not platform admin, and not users:write_app on this app"
+          },
+          "404": {
+            "description": "App not found"
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          },
+          {
+            "api_key": []
           }
         ]
       }
@@ -1112,6 +1182,55 @@
         ]
       }
     },
+    "/v1/auth/change-email": {
+      "post": {
+        "tags": [
+          "auth"
+        ],
+        "summary": "EMAIL-CHANGE-001: step one. The new address is parked in `pending_email`\nand a token goes to it — nothing about the account changes until whoever\nreads that inbox proves it.",
+        "description": "The response is the same whether or not the address was available (§13.1):\nan authenticated user must not be able to probe an identity_pool for which\nemails exist. That does mean a typo'd address that happens to belong to\nsomeone else looks identical to success — the confirmation mail that never\narrives is the signal.",
+        "operationId": "change_email",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ChangeEmailRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "202": {
+            "description": "Confirmation sent if the address can be used",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ChangeEmailResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid or disposable address"
+          },
+          "401": {
+            "description": "Not authenticated, or wrong password"
+          },
+          "403": {
+            "description": "Service accounts, or a session not scoped to an app"
+          },
+          "429": {
+            "description": "Rate limited"
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ]
+      }
+    },
     "/v1/auth/change-password": {
       "post": {
         "tags": [
@@ -1142,6 +1261,48 @@
           },
           "403": {
             "description": "Service accounts have no password"
+          },
+          "429": {
+            "description": "Rate limited"
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ]
+      }
+    },
+    "/v1/auth/delete-account": {
+      "post": {
+        "tags": [
+          "auth"
+        ],
+        "summary": "SELF-DELETE-001: GDPR's right to erasure, and an App Store requirement for\nany app that ships to mobile. Until now only a platform admin could touch\n`account_status`, so a user had no way out on their own.",
+        "description": "Scope is the calling app: leaving tennispro does not delete you from\nnewbase. The identity itself is only anonymized once no membership is left\nanywhere in its identity_pool.\n\nSoft delete, not `DELETE FROM users`: `events` references the user, and\nerasing the audit trail of an account is its own problem. The email is\nanonymized instead, which satisfies erasure and frees the address for\nre-registration.",
+        "operationId": "delete_account",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/DeleteAccountRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "204": {
+            "description": "Account deleted"
+          },
+          "401": {
+            "description": "Not authenticated, or wrong password"
+          },
+          "403": {
+            "description": "Service accounts, or a session not scoped to an app"
+          },
+          "404": {
+            "description": "No membership in the caller's app"
           },
           "429": {
             "description": "Rate limited"
@@ -1593,6 +1754,40 @@
           },
           "429": {
             "description": "Rate limited"
+          }
+        },
+        "security": [
+          {}
+        ]
+      }
+    },
+    "/v1/auth/verify-email-change": {
+      "post": {
+        "tags": [
+          "auth"
+        ],
+        "summary": "Step two. Unauthenticated on purpose: the token is the authorization, and\nthe link is opened wherever the new inbox is read — often another device.",
+        "description": "Every session in the pool is revoked, same as a password reset (§11.2):\nthe login identifier just changed, and anyone still holding a session was\nauthenticated against the old one.",
+        "operationId": "verify_email_change",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/VerifyEmailChangeRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "204": {
+            "description": "Email changed, sessions revoked"
+          },
+          "400": {
+            "description": "Invalid/expired token or no pending change"
+          },
+          "409": {
+            "description": "The address was taken while the change was pending"
           }
         },
         "security": [
@@ -2481,6 +2676,35 @@
           }
         }
       },
+      "ChangeEmailRequest": {
+        "type": "object",
+        "required": [
+          "new_email"
+        ],
+        "properties": {
+          "new_email": {
+            "type": "string"
+          },
+          "password": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "Required whenever the account has a password — an email change is an\naccount takeover vector, so a stolen access token must not suffice."
+          }
+        }
+      },
+      "ChangeEmailResponse": {
+        "type": "object",
+        "required": [
+          "message"
+        ],
+        "properties": {
+          "message": {
+            "type": "string"
+          }
+        }
+      },
       "ChangePasswordRequest": {
         "type": "object",
         "required": [
@@ -2750,6 +2974,18 @@
           }
         }
       },
+      "DeleteAccountRequest": {
+        "type": "object",
+        "properties": {
+          "password": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "Required whenever the account has a password. A valid access token is\nnot enough on its own for an irreversible action."
+          }
+        }
+      },
       "EcosystemResponse": {
         "type": "object",
         "required": [
@@ -2914,6 +3150,134 @@
           },
           "status": {
             "type": "string"
+          }
+        }
+      },
+      "ImportResult": {
+        "type": "object",
+        "required": [
+          "email",
+          "outcome"
+        ],
+        "properties": {
+          "email": {
+            "type": "string"
+          },
+          "error": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "outcome": {
+            "type": "string",
+            "description": "`imported` (new identity), `linked` (identity already in the pool, got\na membership in this app), `skipped` (already a member), `failed`."
+          },
+          "user_id": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "uuid"
+          }
+        }
+      },
+      "ImportUser": {
+        "type": "object",
+        "required": [
+          "email",
+          "password_hash"
+        ],
+        "properties": {
+          "account_status": {
+            "oneOf": [
+              {
+                "type": "null"
+              },
+              {
+                "$ref": "#/components/schemas/AccountStatus"
+              }
+            ]
+          },
+          "email": {
+            "type": "string"
+          },
+          "email_verified": {
+            "type": [
+              "boolean",
+              "null"
+            ],
+            "description": "Imported users come from a system where they already existed, so both\ndefault to \"already good\": active and verified."
+          },
+          "metadata": {
+            "description": "Written to the membership's `local_metadata` (name, tier, legacy id)."
+          },
+          "password_hash": {
+            "type": "string",
+            "description": "Argon2 (`$argon2…`), bcrypt (`$2a/2b/2y$`) or Django\n(`pbkdf2_sha256$…`). Anything else is rejected here rather than\nbecoming a user who can never log in."
+          },
+          "role": {
+            "oneOf": [
+              {
+                "type": "null"
+              },
+              {
+                "$ref": "#/components/schemas/MembershipRole"
+              }
+            ]
+          }
+        }
+      },
+      "ImportUsersRequest": {
+        "type": "object",
+        "required": [
+          "app_id",
+          "users"
+        ],
+        "properties": {
+          "app_id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "users": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/ImportUser"
+            }
+          }
+        }
+      },
+      "ImportUsersResponse": {
+        "type": "object",
+        "required": [
+          "imported",
+          "linked",
+          "skipped",
+          "failed",
+          "results"
+        ],
+        "properties": {
+          "failed": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "imported": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "linked": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "results": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/ImportResult"
+            }
+          },
+          "skipped": {
+            "type": "integer",
+            "minimum": 0
           }
         }
       },
@@ -3265,6 +3629,61 @@
           "app_admin"
         ]
       },
+      "OpenIdConfiguration": {
+        "type": "object",
+        "required": [
+          "issuer",
+          "jwks_uri",
+          "token_endpoint",
+          "id_token_signing_alg_values_supported",
+          "response_types_supported",
+          "subject_types_supported",
+          "grant_types_supported",
+          "claims_supported"
+        ],
+        "properties": {
+          "claims_supported": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "grant_types_supported": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "id_token_signing_alg_values_supported": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "issuer": {
+            "type": "string"
+          },
+          "jwks_uri": {
+            "type": "string"
+          },
+          "response_types_supported": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "subject_types_supported": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "token_endpoint": {
+            "type": "string",
+            "description": "Where a client trades credentials for tokens. Not an OAuth2 token\nendpoint — it takes `{email, password}` plus `X-Gateward-App-Id`."
+          }
+        }
+      },
       "PaginationQuery": {
         "type": "object",
         "properties": {
@@ -3354,6 +3773,9 @@
         "properties": {
           "email": {
             "type": "string"
+          },
+          "metadata": {
+            "description": "REGISTER-PROFILE-001: profile fields the app collects at signup (name,\nphone, preferences), written straight into the new membership's\n`local_metadata`. Without this an app has to follow every registration\nwith a second authenticated call just to store the name it already had."
           },
           "password": {
             "type": "string"
@@ -3732,6 +4154,17 @@
           }
         }
       },
+      "VerifyEmailChangeRequest": {
+        "type": "object",
+        "required": [
+          "token"
+        ],
+        "properties": {
+          "token": {
+            "type": "string"
+          }
+        }
+      },
       "VerifyEmailRequest": {
         "type": "object",
         "required": [
@@ -3799,7 +4232,7 @@
     },
     {
       "name": "well-known",
-      "description": "Public discovery endpoints (JWKS)"
+      "description": "Public discovery endpoints (JWKS, OIDC)"
     }
   ]
 }

@@ -116,17 +116,27 @@ export class GatewardAuth extends AuthSession {
     return updated;
   }
 
-  /** Register a user into this app.
+  /** Register a user into this app. `metadata` is the signup profile (name,
+   *  phone, preferences) and lands in the membership, so no second call.
    *
    *  Logs in only when the app runs with `require_email_verification: false`
-   *  (APP-POLICY-001) — then the Core returns tokens, this persists them and
-   *  emits `signed_in`. Otherwise there is no session until the email is
-   *  verified. Check `isAuthenticated` rather than assuming either way. */
-  async register(email: string, password: string): Promise<RegisterResponse> {
+   *  — then the Core returns tokens, this persists them and emits `signed_in`.
+   *  Check `isAuthenticated` rather than assuming either way. */
+  async register(
+    email: string,
+    password: string,
+    opts: { metadata?: Record<string, unknown> } = {},
+  ): Promise<RegisterResponse> {
     const res = await this.http.request<RegisterResponse>(
       "POST",
       "/v1/auth/register",
-      { body: { email, password } },
+      {
+        body: {
+          email,
+          password,
+          ...(opts.metadata ? { metadata: opts.metadata } : {}),
+        },
+      },
     );
     const tokens = tokensOf(res);
     if (tokens) await this.persist(tokens);
@@ -148,8 +158,48 @@ export class GatewardAuth extends AuthSession {
     newPassword: string,
   ): Promise<void> {
     await this.authedRequest<void>("POST", "/v1/auth/change-password", {
+      retryOn401: false,
       body: { current_password: currentPassword, new_password: newPassword },
     });
+  }
+
+  /** Start an email change. The Core mails a confirmation token to the NEW
+   *  address; nothing changes until {@link verifyEmailChange}.
+   *
+   *  Anti-enumeration: a taken address answers exactly like a free one, so a
+   *  typo landing in someone else's inbox looks like success here. Tell the
+   *  user the change only lands once they confirm from that inbox. */
+  async changeEmail(newEmail: string, password?: string): Promise<void> {
+    await this.authedRequest<void>("POST", "/v1/auth/change-email", {
+      retryOn401: false,
+      body: {
+        new_email: newEmail,
+        ...(password !== undefined ? { password } : {}),
+      },
+    });
+  }
+
+  /** Confirm the change with the emailed token.
+   *
+   *  The Core revokes every session in the pool, so this IS a logout: the
+   *  stored tokens are dead and the local session is cleared. Send the user
+   *  back to login with the new address. */
+  async verifyEmailChange(token: string): Promise<void> {
+    await this.http.request<void>("POST", "/v1/auth/verify-email-change", {
+      body: { token },
+    });
+    await this.forgetLocalSession();
+  }
+
+  /** Delete the caller's account. Scoped to THIS app — the user keeps any
+   *  membership in other apps, and the identity is only anonymized once none
+   *  are left. Irreversible, so the Core wants the password too. */
+  async deleteAccount(password?: string): Promise<void> {
+    await this.authedRequest<void>("POST", "/v1/auth/delete-account", {
+      retryOn401: false,
+      body: password !== undefined ? { password } : {},
+    });
+    await this.forgetLocalSession();
   }
 
   /** List the caller's own active sessions. */
