@@ -230,6 +230,30 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/v1/auth/change-password": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * SELF-001: change your own password while logged in. Unlike
+         *     forgot/reset-password (§11), authorization here is the access token
+         *     plus proof of the current password — no email round-trip.
+         * @description Every *other* session in the identity_pool is revoked; the caller's
+         *     own stays alive, since logging someone out of the screen they just
+         *     used to change their password is hostile, not safer.
+         */
+        post: operations["change_password"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/v1/auth/forgot-password": {
         parameters: {
             query?: never;
@@ -296,18 +320,23 @@ export interface paths {
             cookie?: never;
         };
         /**
-         * Every surveyed integrator needs `{id, email, name, role}` right after
-         *     login; without this they would each re-derive it from JWT claims plus a
-         *     second call. One round-trip, no admin scope needed — a caller can only
-         *     ever read itself (`WHERE u.id = auth.user_id`).
+         * SELF-001: who am I. Apps need this right after login/refresh to render
+         *     a profile screen without proxying through their own backend with an
+         *     API key (which is what `/v1/users/{id}/metadata` forces today).
          */
-        get: operations["whoami"];
+        get: operations["get_me"];
         put?: never;
         post?: never;
         delete?: never;
         options?: never;
         head?: never;
-        patch?: never;
+        /**
+         * SELF-001: write your own per-app metadata (display name, preferences).
+         *     Same storage as `PATCH /v1/users/{id}/metadata`, but gated on
+         *     `users:write_own` and hard-scoped to the caller's own membership —
+         *     the user id is never taken from the request.
+         */
+        patch: operations["patch_me"];
         trace?: never;
     };
     "/v1/auth/platform-login": {
@@ -541,7 +570,12 @@ export interface paths {
         get: operations["list_sessions"];
         put?: never;
         post?: never;
-        delete?: never;
+        /**
+         * SELF-001: "cerrar sesión en todos lados". The sweep itself already
+         *     existed (`session::revoke_all_for_user_in_pool`, used by reset-password);
+         *     this exposes it to the session's owner.
+         */
+        delete: operations["revoke_all_own_sessions"];
         options?: never;
         head?: never;
         patch?: never;
@@ -648,6 +682,10 @@ export interface components {
             name: string;
             redirect_urls: string[];
             status: string;
+        };
+        ChangePasswordRequest: {
+            current_password: string;
+            new_password: string;
         };
         /**
          * @description Typed view of the `client_info` jsonb stored on a session / event — so the
@@ -856,42 +894,24 @@ export interface components {
             refresh_token: string;
             token_type: string;
         };
-        /**
-         * @description The caller's own identity, as seen through the token it presented.
-         *     Identity-level fields come from `users`; `role`/`metadata` come from the
-         *     `app_memberships` row for the token's app (absent on platform-admin
-         *     tokens, which are not scoped to an app).
-         */
         MeResponse: {
             account_status: components["schemas"]["AccountStatus"];
             actor_kind: components["schemas"]["ActorKind"];
-            /**
-             * Format: uuid
-             * @description App the token is scoped to; `null` for platform-admin tokens.
-             */
+            /** Format: uuid */
             app_id?: string | null;
             /** Format: date-time */
             created_at: string;
-            /** Format: uuid */
-            ecosystem_id: string;
             email: string;
-            /** Format: date-time */
-            email_verified_at?: string | null;
-            /** Format: uuid */
-            id: string;
-            /** Format: uuid */
-            identity_pool_id: string;
-            /** Format: date-time */
-            last_login_at?: string | null;
+            email_verified: boolean;
+            membership_role?: null | components["schemas"]["MembershipRole"];
             /**
-             * @description The app's per-app data (`app_memberships.local_metadata`) — where an
-             *     integrator keeps its display name, its own role, etc. `{}` when unset.
+             * @description The caller's own `app_memberships.local_metadata` — `{}` when the
+             *     session isn't app-scoped.
              */
             metadata: unknown;
-            role?: null | components["schemas"]["MembershipRole"];
             scopes: string[];
             /** Format: uuid */
-            session_id: string;
+            user_id: string;
         };
         /** @enum {string} */
         MembershipRole: "member" | "app_admin";
@@ -900,6 +920,10 @@ export interface components {
             limit?: number | null;
             /** Format: int64 */
             offset?: number | null;
+        };
+        PatchMeRequest: {
+            /** @description JSON object shallow-merged into the caller's own `local_metadata`. */
+            metadata: unknown;
         };
         PatchMetadataRequest: {
             /** @description JSON object shallow-merged into the membership's `local_metadata`. */
@@ -910,15 +934,6 @@ export interface components {
         };
         RegisterRequest: {
             email: string;
-            /**
-             * @description Optional per-app signup profile, stored as the membership's
-             *     `local_metadata` — e.g. `{"display_name": "Ana"}`. Read back from
-             *     `GET /v1/auth/me`.
-             *
-             *     **Untrusted:** the registrant supplies this, so never use it for
-             *     authorization. Gateward's own `role` is not settable here.
-             */
-            metadata?: unknown;
             password: string;
         };
         RegisterResponse: {
@@ -933,6 +948,10 @@ export interface components {
         ResetPasswordRequest: {
             new_password: string;
             token: string;
+        };
+        RevokeAllResponse: {
+            /** Format: int64 */
+            revoked: number;
         };
         ScopesResponse: {
             /** @description The catalog of scopes a service-account API key may be granted. */
@@ -1596,6 +1615,56 @@ export interface operations {
             };
         };
     };
+    change_password: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ChangePasswordRequest"];
+            };
+        };
+        responses: {
+            /** @description Password changed, other sessions revoked */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Weak password or same as current */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Not authenticated or wrong current password */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Service accounts have no password */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Rate limited */
+            429: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
     forgot_password: {
         parameters: {
             query?: never;
@@ -1703,7 +1772,7 @@ export interface operations {
             };
         };
     };
-    whoami: {
+    get_me: {
         parameters: {
             query?: never;
             header?: never;
@@ -1712,7 +1781,7 @@ export interface operations {
         };
         requestBody?: never;
         responses: {
-            /** @description The authenticated caller's identity */
+            /** @description The authenticated user's own profile */
             200: {
                 headers: {
                     [name: string]: unknown;
@@ -1728,14 +1797,59 @@ export interface operations {
                 };
                 content?: never;
             };
-            /** @description API-key auth has no end user */
+            /** @description User no longer exists */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    patch_me: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["PatchMeRequest"];
+            };
+        };
+        responses: {
+            /** @description Updated profile (metadata shallow-merged) */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["MeResponse"];
+                };
+            };
+            /** @description metadata must be a JSON object */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Not authenticated */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Missing users:write_own scope or no app-scoped session */
             403: {
                 headers: {
                     [name: string]: unknown;
                 };
                 content?: never;
             };
-            /** @description User no longer exists */
+            /** @description No membership in the caller's app */
             404: {
                 headers: {
                     [name: string]: unknown;
@@ -1845,7 +1959,7 @@ export interface operations {
                     "application/json": components["schemas"]["RegisterResponse"];
                 };
             };
-            /** @description Validation error (bad email/password, or metadata not an object / over 4 KiB) */
+            /** @description Validation error */
             400: {
                 headers: {
                     [name: string]: unknown;
@@ -2292,6 +2406,47 @@ export interface operations {
                 content?: never;
             };
             /** @description Missing session:read_own scope */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    revoke_all_own_sessions: {
+        parameters: {
+            query?: {
+                /**
+                 * @description Whether to also revoke the session making the request. Defaults to
+                 *     false — "log out everywhere else" is the common case, and the SDK
+                 *     can still call `/v1/auth/logout` for the current one.
+                 */
+                include_current?: boolean;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Sessions revoked */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["RevokeAllResponse"];
+                };
+            };
+            /** @description Not authenticated */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Missing session:revoke_own scope */
             403: {
                 headers: {
                     [name: string]: unknown;

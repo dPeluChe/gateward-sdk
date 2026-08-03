@@ -886,6 +886,48 @@
         ]
       }
     },
+    "/v1/auth/change-password": {
+      "post": {
+        "tags": [
+          "auth"
+        ],
+        "summary": "SELF-001: change your own password while logged in. Unlike\nforgot/reset-password (§11), authorization here is the access token\nplus proof of the current password — no email round-trip.",
+        "description": "Every *other* session in the identity_pool is revoked; the caller's\nown stays alive, since logging someone out of the screen they just\nused to change their password is hostile, not safer.",
+        "operationId": "change_password",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ChangePasswordRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "204": {
+            "description": "Password changed, other sessions revoked"
+          },
+          "400": {
+            "description": "Weak password or same as current"
+          },
+          "401": {
+            "description": "Not authenticated or wrong current password"
+          },
+          "403": {
+            "description": "Service accounts have no password"
+          },
+          "429": {
+            "description": "Rate limited"
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ]
+      }
+    },
     "/v1/auth/forgot-password": {
       "post": {
         "tags": [
@@ -1014,11 +1056,11 @@
         "tags": [
           "auth"
         ],
-        "summary": "Every surveyed integrator needs `{id, email, name, role}` right after\nlogin; without this they would each re-derive it from JWT claims plus a\nsecond call. One round-trip, no admin scope needed — a caller can only\never read itself (`WHERE u.id = auth.user_id`).",
-        "operationId": "whoami",
+        "summary": "SELF-001: who am I. Apps need this right after login/refresh to render\na profile screen without proxying through their own backend with an\nAPI key (which is what `/v1/users/{id}/metadata` forces today).",
+        "operationId": "get_me",
         "responses": {
           "200": {
-            "description": "The authenticated caller's identity",
+            "description": "The authenticated user's own profile",
             "content": {
               "application/json": {
                 "schema": {
@@ -1030,11 +1072,54 @@
           "401": {
             "description": "Not authenticated"
           },
-          "403": {
-            "description": "API-key auth has no end user"
-          },
           "404": {
             "description": "User no longer exists"
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ]
+      },
+      "patch": {
+        "tags": [
+          "auth"
+        ],
+        "summary": "SELF-001: write your own per-app metadata (display name, preferences).\nSame storage as `PATCH /v1/users/{id}/metadata`, but gated on\n`users:write_own` and hard-scoped to the caller's own membership —\nthe user id is never taken from the request.",
+        "operationId": "patch_me",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/PatchMeRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Updated profile (metadata shallow-merged)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MeResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "metadata must be a JSON object"
+          },
+          "401": {
+            "description": "Not authenticated"
+          },
+          "403": {
+            "description": "Missing users:write_own scope or no app-scoped session"
+          },
+          "404": {
+            "description": "No membership in the caller's app"
           }
         },
         "security": [
@@ -1163,7 +1248,7 @@
             }
           },
           "400": {
-            "description": "Validation error (bad email/password, or metadata not an object / over 4 KiB)"
+            "description": "Validation error"
           },
           "429": {
             "description": "Rate limited"
@@ -1737,6 +1822,47 @@
             "bearer": []
           }
         ]
+      },
+      "delete": {
+        "tags": [
+          "sessions"
+        ],
+        "summary": "SELF-001: \"cerrar sesión en todos lados\". The sweep itself already\nexisted (`session::revoke_all_for_user_in_pool`, used by reset-password);\nthis exposes it to the session's owner.",
+        "operationId": "revoke_all_own_sessions",
+        "parameters": [
+          {
+            "name": "include_current",
+            "in": "query",
+            "description": "Whether to also revoke the session making the request. Defaults to\nfalse — \"log out everywhere else\" is the common case, and the SDK\ncan still call `/v1/auth/logout` for the current one.",
+            "required": false,
+            "schema": {
+              "type": "boolean"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Sessions revoked",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RevokeAllResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Not authenticated"
+          },
+          "403": {
+            "description": "Missing session:revoke_own scope"
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ]
       }
     },
     "/v1/sessions/{id}": {
@@ -2116,6 +2242,21 @@
             }
           },
           "status": {
+            "type": "string"
+          }
+        }
+      },
+      "ChangePasswordRequest": {
+        "type": "object",
+        "required": [
+          "current_password",
+          "new_password"
+        ],
+        "properties": {
+          "current_password": {
+            "type": "string"
+          },
+          "new_password": {
             "type": "string"
           }
         }
@@ -2763,18 +2904,15 @@
       },
       "MeResponse": {
         "type": "object",
-        "description": "The caller's own identity, as seen through the token it presented.\nIdentity-level fields come from `users`; `role`/`metadata` come from the\n`app_memberships` row for the token's app (absent on platform-admin\ntokens, which are not scoped to an app).",
         "required": [
-          "id",
+          "user_id",
           "email",
+          "email_verified",
           "account_status",
           "actor_kind",
-          "created_at",
-          "ecosystem_id",
-          "identity_pool_id",
-          "session_id",
+          "scopes",
           "metadata",
-          "scopes"
+          "created_at"
         ],
         "properties": {
           "account_status": {
@@ -2788,55 +2926,31 @@
               "string",
               "null"
             ],
-            "format": "uuid",
-            "description": "App the token is scoped to; `null` for platform-admin tokens."
+            "format": "uuid"
           },
           "created_at": {
             "type": "string",
             "format": "date-time"
           },
-          "ecosystem_id": {
-            "type": "string",
-            "format": "uuid"
-          },
           "email": {
             "type": "string"
           },
-          "email_verified_at": {
-            "type": [
-              "string",
-              "null"
-            ],
-            "format": "date-time"
+          "email_verified": {
+            "type": "boolean"
           },
-          "id": {
-            "type": "string",
-            "format": "uuid"
-          },
-          "identity_pool_id": {
-            "type": "string",
-            "format": "uuid"
-          },
-          "last_login_at": {
-            "type": [
-              "string",
-              "null"
-            ],
-            "format": "date-time"
-          },
-          "metadata": {
-            "description": "The app's per-app data (`app_memberships.local_metadata`) — where an\nintegrator keeps its display name, its own role, etc. `{}` when unset."
-          },
-          "role": {
+          "membership_role": {
             "oneOf": [
               {
                 "type": "null"
               },
               {
                 "$ref": "#/components/schemas/MembershipRole",
-                "description": "Gateward's own membership role in that app."
+                "description": "Role in the caller's app — `null` for a platform-admin session,\nwhich isn't scoped to an app."
               }
             ]
+          },
+          "metadata": {
+            "description": "The caller's own `app_memberships.local_metadata` — `{}` when the\nsession isn't app-scoped."
           },
           "scopes": {
             "type": "array",
@@ -2844,7 +2958,7 @@
               "type": "string"
             }
           },
-          "session_id": {
+          "user_id": {
             "type": "string",
             "format": "uuid"
           }
@@ -2873,6 +2987,17 @@
               "null"
             ],
             "format": "int64"
+          }
+        }
+      },
+      "PatchMeRequest": {
+        "type": "object",
+        "required": [
+          "metadata"
+        ],
+        "properties": {
+          "metadata": {
+            "description": "JSON object shallow-merged into the caller's own `local_metadata`."
           }
         }
       },
@@ -2907,9 +3032,6 @@
         "properties": {
           "email": {
             "type": "string"
-          },
-          "metadata": {
-            "description": "Optional per-app signup profile, stored as the membership's\n`local_metadata` — e.g. `{\"display_name\": \"Ana\"}`. Read back from\n`GET /v1/auth/me`.\n\n**Untrusted:** the registrant supplies this, so never use it for\nauthorization. Gateward's own `role` is not settable here."
           },
           "password": {
             "type": "string"
@@ -2961,6 +3083,19 @@
           },
           "token": {
             "type": "string"
+          }
+        }
+      },
+      "RevokeAllResponse": {
+        "type": "object",
+        "required": [
+          "revoked"
+        ],
+        "properties": {
+          "revoked": {
+            "type": "integer",
+            "format": "int64",
+            "minimum": 0
           }
         }
       },
