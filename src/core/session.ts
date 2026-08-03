@@ -100,6 +100,26 @@ export abstract class AuthSession {
     return createAuthedFetch(this, opts);
   }
 
+  /** Shallow-merge into the caller's own profile metadata (`PATCH
+   *  /v1/auth/me`, scope `users:write_own`). Refreshes the cached user. */
+  async updateProfile(
+    metadata: Record<string, unknown>,
+  ): Promise<GatewardUser> {
+    const user = await this.authedRequest<GatewardUser>(
+      "PATCH",
+      "/v1/auth/me",
+      { body: { metadata } },
+    );
+    this.cachedUser = user;
+    return user;
+  }
+
+  /** Drop the local session as if the server had ended it. */
+  protected async forgetLocalSession(): Promise<void> {
+    await this.storage.clear();
+    this.forget("signed_out");
+  }
+
   /** Claims of the current access token, decoded locally (no round-trip).
    *  Refreshes first if the token is near expiry.
    *

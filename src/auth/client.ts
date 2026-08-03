@@ -58,23 +58,12 @@ export class GatewardAuth extends AuthSession {
     );
   }
 
-  /** Register a user into this app. Does not log in (no tokens issued) — the
-   *  Core requires email verification first.
-   *
-   *  `metadata` is the signup profile (display name, locale, …), stored on the
-   *  membership and returned by {@link getUser}. It is user-supplied, so the
-   *  Core never derives authorization from it and neither should you. */
-  register(
-    email: string,
-    password: string,
-    opts: { metadata?: Record<string, unknown> } = {},
-  ): Promise<RegisterResponse> {
+  /** Register a user into this app. Does not log in — the Core requires email
+   *  verification first. Set the profile afterwards with
+   *  {@link updateProfile}. */
+  register(email: string, password: string): Promise<RegisterResponse> {
     return this.http.request<RegisterResponse>("POST", "/v1/auth/register", {
-      body: {
-        email,
-        password,
-        ...(opts.metadata ? { metadata: opts.metadata } : {}),
-      },
+      body: { email, password },
     });
   }
 
@@ -86,6 +75,17 @@ export class GatewardAuth extends AuthSession {
     return this.persist(tokens);
   }
 
+  /** Change the password, proving the current one. The Core revokes the
+   *  caller's other sessions and keeps this one alive. */
+  async changePassword(
+    currentPassword: string,
+    newPassword: string,
+  ): Promise<void> {
+    await this.authedRequest<void>("POST", "/v1/auth/change-password", {
+      body: { current_password: currentPassword, new_password: newPassword },
+    });
+  }
+
   /** List the caller's own active sessions. */
   listSessions(): Promise<SessionSummary[]> {
     return this.authedRequest<SessionSummary[]>("GET", "/v1/sessions");
@@ -94,6 +94,21 @@ export class GatewardAuth extends AuthSession {
   /** Revoke one of the caller's sessions by id. */
   async revokeSession(sessionId: string): Promise<void> {
     await this.authedRequest<void>("DELETE", `/v1/sessions/${sessionId}`);
+  }
+
+  /** Sign out everywhere. Keeps the current session unless
+   *  `includeCurrent`. Returns how many were revoked. */
+  async revokeAllSessions(
+    opts: { includeCurrent?: boolean } = {},
+  ): Promise<number> {
+    const res = await this.authedRequest<{ revoked: number }>(
+      "DELETE",
+      "/v1/sessions",
+      opts.includeCurrent ? { query: { include_current: true } } : {},
+    );
+    // Revoking our own session leaves the stored tokens dead.
+    if (opts.includeCurrent) await this.forgetLocalSession();
+    return res.revoked;
   }
 
   /** Start password recovery — the Core emails a reset token (always 202,
