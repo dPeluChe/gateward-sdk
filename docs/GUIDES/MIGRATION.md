@@ -180,31 +180,65 @@ Opciones: verificar a mano con `PyJWT` + `PyJWKClient` contra
 
 ## Migrar usuarios existentes
 
-No hay import masivo. Los hashes viejos (bcrypt de Convex, Argon2 de Django) no
-se pueden trasladar: Gateward usa Argon2id con sus propios parámetros y no
-acepta hashes ajenos.
+**Los hashes se importan.** No hace falta reset masivo ni mantener dos logins
+en paralelo — que era el camino peligroso.
 
-Dos caminos:
+`POST /v1/admin/users/import` acepta:
 
-1. **Reset forzado.** Registrás los emails y mandás `forgotPassword()` a todos.
-   Simple, cuesta una campaña de correo.
-2. **Migración perezosa.** Mantenés el login viejo un tiempo; en cada login
-   exitoso, registrás al usuario en Gateward con la contraseña que acaba de
-   escribir en claro. Sin fricción para el usuario, pero convivís con dos
-   sistemas hasta que la cola se vacíe.
+| Formato | De dónde suele venir |
+|---|---|
+| Argon2 | apps que ya usaban Argon2 |
+| bcrypt (`$2a$`, `$2b$`, `$2y$`) | Node, Convex, Rails |
+| `pbkdf2_sha256$…` | Django |
+
+El re-hash a Argon2id pasa solo, en el primer login de cada usuario: para el
+usuario es transparente, escribe su contraseña de siempre. Cualquier otro
+formato se rechaza **en el import**, no en el primer login, así que te enterás
+al migrar y no cuando el usuario no pueda entrar.
+
+Detalles operativos (máximo 200 por request, veredicto por fila, una fila mala
+no tumba el lote) en la guía `docs/GUIDES/user-migration.md` del Core.
+
+Es superficie de admin, así que la corre un operador desde el dashboard — no la
+app integrada, y por eso no está en este SDK.
+
+> Para medir avance: contar usuarios cuyo `password_hash` no empiece con
+> `$argon2`. Cuando llegue a cero, todos migraron.
+
+Reimportar **nunca pisa credenciales vivas**, así que el import no sirve para
+cambiar contraseñas — para eso está `forgotPassword()`.
+
+## Ambientes de prueba
+
+No hay un Core de staging aparte, y no hace falta: el aislamiento se arma
+**dentro del mismo Core** con un identity pool propio y un app marcado
+`environment: "test"`. Los usuarios de QA quedan en otro pool y no tocan los
+reales.
+
+Protegé el build con la guarda del SDK:
+
+```ts
+new GatewardAuth({ baseUrl, appId, expectEnvironment: "test" });
+```
+
+En apps de test conviene `require_email_verification: false`: sin SMTP
+configurado el token de verificación solo queda en los logs del Core y no hay
+forma de completar el alta desde afuera.
+
+La prueba que de verdad valida el aislamiento es la última del checklist del
+Core (`docs/GUIDES/integration-testing.md`): **el usuario de QA tiene que dar
+401 contra el `app_id` de producción.** Corrémela antes de dar por buena una
+integración.
 
 ## Bloqueadores conocidos
 
-Cosas que hoy **no** se pueden migrar tal cual:
-
 | Bloqueador | A quién afecta |
 |---|---|
-| `register` no acepta perfil (nombre) en el alta | apps que piden nombre o alias al registrarse |
-| Sin cambio de email | apps con edición de email en el perfil |
 | Sin SDK de Python | backends Django/DRF y FastAPI |
 
-Ya resueltos: política de password configurable por app (una app puede exigir,
-por ejemplo, un PIN numérico corto en vez del mínimo por defecto), auto-login en
-el alta, y asignación de `app_admin` (ver "Roles de app" en el README).
+Es el único que queda. Ya están resueltos: política de password por app (una app
+puede exigir un PIN numérico corto en vez del mínimo por defecto), auto-login en
+el alta, perfil en el registro, asignación de `app_admin`, cambio de email, baja
+de cuenta, e import de hashes legacy.
 
 Están reportados al equipo del Core.
