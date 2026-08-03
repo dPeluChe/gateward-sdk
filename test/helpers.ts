@@ -11,6 +11,8 @@ export interface StubResponse {
   status?: number;
   json?: unknown;
   text?: string;
+  /** Extra response headers, e.g. `X-Total-Count`. */
+  headers?: Record<string, string>;
 }
 
 /** A `fetch` stub that records calls and replays queued responses in order.
@@ -46,7 +48,7 @@ export function stubFetch(
     const body = payload === "" ? null : payload;
     return new Response(body, {
       status,
-      headers: { "content-type": "application/json" },
+      headers: { "content-type": "application/json", ...(r.headers ?? {}) },
     });
   }) as unknown as FetchLike;
   return { fetch, calls };

@@ -14,6 +14,13 @@ export type GatewardUser = Omit<Schemas["MeResponse"], "metadata"> & {
   metadata: Record<string, unknown>;
 };
 export type SessionSummary = Schemas["SessionSummary"];
+export type MembershipRole = Schemas["MembershipRole"];
+/** `local_metadata` is arbitrary JSON in the contract; widened like
+ *  {@link GatewardUser.metadata}. */
+export type MembershipResponse = Omit<
+  Schemas["MembershipResponse"],
+  "local_metadata"
+> & { local_metadata: Record<string, unknown> };
 export type EventRecord = Schemas["EventRecord"];
 export type ActorKind = Schemas["ActorKind"];
 export type Jwk = Schemas["Jwk"];

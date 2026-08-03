@@ -3,11 +3,20 @@ import {
   type RequestHooks,
   type RetryOptions,
 } from "./core/http.js";
+import {
+  getMember,
+  listMembers,
+  setMemberRole,
+  type ListMembersQuery as MembersQuery,
+  type MemberPage,
+} from "./core/members.js";
 import { JwtVerifier } from "./jwt/verify.js";
 import type {
   EventRecord,
   FetchLike,
   GatewardClaims,
+  MembershipResponse,
+  MembershipRole,
 } from "./core/types.js";
 
 export interface GatewardServerOptions {
@@ -115,6 +124,27 @@ export class GatewardServer {
       { apiKey: this.apiKey, body: { metadata: patch } },
     );
     return res.metadata;
+  }
+
+  /** Members of one of this key's apps (scope `app:user_manage`). The key
+   *  can only reach its own app — another app in the ecosystem is a 403. */
+  listMembers(appId: string, query: MembersQuery = {}): Promise<MemberPage> {
+    return listMembers(this.http, { apiKey: this.apiKey }, appId, query);
+  }
+
+  /** One membership. */
+  getMember(appId: string, userId: string): Promise<MembershipResponse> {
+    return getMember(this.http, { apiKey: this.apiKey }, appId, userId);
+  }
+
+  /** Promote or demote a member. The Core refuses (409) to demote the last
+   *  `app_admin`; only a platform admin can. */
+  setMemberRole(
+    appId: string,
+    userId: string,
+    role: MembershipRole,
+  ): Promise<MembershipResponse> {
+    return setMemberRole(this.http, { apiKey: this.apiKey }, appId, userId, role);
   }
 
   /** Verify a Gateward access token locally (ES256 via JWKS). Pass

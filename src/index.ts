@@ -41,8 +41,14 @@ export {
   type VerifyOptions,
 } from "./jwt/verify.js";
 export type {
+  ListMembersQuery,
+  MemberPage,
+} from "./core/members.js";
+export type {
   GatewardClaims,
   GatewardUser,
+  MembershipResponse,
+  MembershipRole,
   TokenResponse,
   RegisterResponse,
   SessionSummary,

@@ -87,9 +87,9 @@ NextAuth, rol en el callback `session`.
 - La matriz RBAC (`src/lib/rbac.ts`) **se queda como está**. Sigue siendo tuya;
   solo cambia de dónde sale el rol que le pasás.
 
-⚠ El bootstrap "primer usuario = admin" (`hasAnyUsers` en dpeluche.dev) no
-tiene equivalente: hoy nada puede asignar `app_admin` (ROLE-001). Mientras
-tanto, guardá el rol en `metadata` y autorizá en tu backend.
+⚠ El bootstrap "primer usuario = admin" (`hasAnyUsers` en dpeluche.dev) no es
+automático: el primer `app_admin` lo promueve un platform admin, porque dentro
+de la app todavía no hay nadie con `app:user_manage`.
 
 ## Patrón C — Store + interceptor (zustand/axios)
 
@@ -204,12 +204,12 @@ Cosas que hoy **no** se pueden migrar tal cual:
 
 | Bloqueador | A quién afecta |
 |---|---|
-| Nada puede asignar `app_admin` (ROLE-001) | cualquier app con rol de administrador |
 | `register` no acepta perfil (nombre) en el alta | tennispro, feedby, ligamx |
 | Sin cambio de email (EMAIL-CHANGE-001) | tennispro |
 | Sin SDK de Python | skysset, feedby, henri (backends) |
 
-Resueltos por APP-POLICY-001: la política de password ahora es por app (el PIN
-de 4 dígitos de ligamx/mundialito ya entra) y el auto-login en el alta también.
+Resueltos: APP-POLICY-001 (política de password por app — el PIN de 4 dígitos
+de ligamx/mundialito ya entra — y auto-login en el alta) y ROLE-001
+(`app_admin` ya es asignable; ver "Roles de app" en el README).
 
 Están reportados al equipo del Core.
