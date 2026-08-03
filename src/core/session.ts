@@ -1,4 +1,5 @@
 import { HttpClient } from "./http.js";
+import { createAuthedFetch, type AuthedFetchOptions } from "./authed-fetch.js";
 import { GatewardError } from "./errors.js";
 import {
   AuthStateEmitter,
@@ -7,7 +8,12 @@ import {
 } from "./events.js";
 import { MemoryStorage, type TokenStorage, type TokenSet } from "./storage.js";
 import { decodeClaims } from "../jwt/verify.js";
-import type { GatewardClaims, GatewardUser, TokenResponse } from "./types.js";
+import type {
+  FetchLike,
+  GatewardClaims,
+  GatewardUser,
+  TokenResponse,
+} from "./types.js";
 
 export interface SessionOptions {
   /** Token persistence (default {@link MemoryStorage}). */
@@ -82,6 +88,16 @@ export abstract class AuthSession {
         this.userInFlight = null;
       });
     return this.userInFlight;
+  }
+
+  /** A `fetch` bound to this session for calling **your own** API: attaches
+   *  the bearer, refreshes when the token is near expiry, retries once on a
+   *  401. Pass it to any client that takes a `fetch`.
+   *
+   *  Scope it with `{ origins: [...] }` if the same fetch also reaches third
+   *  parties — otherwise you'd send them your access token. */
+  createFetch(opts: AuthedFetchOptions = {}): FetchLike {
+    return createAuthedFetch(this, opts);
   }
 
   /** Shallow-merge into the caller's own profile metadata (`PATCH

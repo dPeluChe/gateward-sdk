@@ -102,6 +102,33 @@ sigue pintando una sesión que no existe.
 
 Un listener que tira error queda aislado: no rompe el pipeline de tokens.
 
+### Llamar a tu propia API
+
+`createFetch()` devuelve un `fetch` firmado con la sesión: adjunta el Bearer,
+refresca si el token está por expirar, y reintenta **una** vez tras un 401.
+Va a cualquier cliente que acepte un `fetch` (openapi-fetch, ky, un adapter de
+axios) — es el interceptor que hoy escribe a mano cada proyecto.
+
+```ts
+import createClient from "openapi-fetch";
+
+const api = createClient<paths>({
+  baseUrl: "https://api.myapp.com",
+  fetch: auth.createFetch({ origins: ["https://api.myapp.com"] }),
+});
+```
+
+- **Sin sesión no es error**: el request sale sin firmar, así los endpoints
+  públicos siguen andando y tu API responde su propio 401.
+- Si el refresh falla, devuelve el **401 original** — enmascararlo con el error
+  del refresh esconde por qué falló la llamada de verdad.
+- `retryOn401: false` desactiva el reintento.
+
+> `origins` acota a qué hosts se manda el token. Sin la lista se firma **todo**
+> lo que pase por ese `fetch`: perfecto si se lo das a un solo cliente de API,
+> peligroso como reemplazo global de `fetch` — le estarías mandando tu access
+> token a terceros.
+
 Manda automáticamente un **`X-Gateward-Device-Id`** estable (generado y persistido
 en `localStorage` en el browser) para que el Core reconozca el mismo dispositivo entre
 sesiones, y un **`X-Gateward-Timezone`** (IANA, detectado vía `Intl`). Controlables con
