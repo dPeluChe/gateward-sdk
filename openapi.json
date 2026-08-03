@@ -884,6 +884,61 @@
             "bearer": []
           }
         ]
+      },
+      "patch": {
+        "tags": [
+          "management"
+        ],
+        "summary": "APP-POLICY-001: `password_policy` and `require_email_verification` are\nproduct decisions per app, so they need a way in. Every field is\noptional — a PATCH only touches what it names.",
+        "operationId": "update_app",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "description": "App ID",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/UpdateAppRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "App updated",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AppResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid policy or empty name"
+          },
+          "403": {
+            "description": "Not platform admin"
+          },
+          "404": {
+            "description": "App not found"
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ]
       }
     },
     "/v1/auth/change-password": {
@@ -1213,7 +1268,8 @@
         "tags": [
           "auth"
         ],
-        "summary": "Plan V6 §13.1: always the same response shape whether the email was\nnew or already existed in this identity_pool — no session/tokens\neither way, login happens as a separate call.",
+        "summary": "Plan V6 §13.1: the same response whether the email was new or already\nexisted in this identity_pool, and login happens as a separate call.",
+        "description": "APP-POLICY-001 gives an app an opt-out: with\n`require_email_verification = false` the user is created active and\nregistration returns tokens directly. That trades away §13.1's\nanti-enumeration property — a duplicate email gets no tokens, which is\nobservable — so it's an explicit per-app decision, off by default.",
         "operationId": "register",
         "parameters": [
           {
@@ -1238,7 +1294,7 @@
         },
         "responses": {
           "202": {
-            "description": "Registration accepted (or email already exists)",
+            "description": "Registration accepted (or email already exists). Carries tokens when the app does not require email verification",
             "content": {
               "application/json": {
                 "schema": {
@@ -2205,7 +2261,9 @@
           "identity_mode",
           "status",
           "allowed_origins",
-          "redirect_urls"
+          "redirect_urls",
+          "password_policy",
+          "require_email_verification"
         ],
         "properties": {
           "allowed_origins": {
@@ -2235,11 +2293,17 @@
           "name": {
             "type": "string"
           },
+          "password_policy": {
+            "$ref": "#/components/schemas/PasswordPolicy"
+          },
           "redirect_urls": {
             "type": "array",
             "items": {
               "type": "string"
             }
+          },
+          "require_email_verification": {
+            "type": "boolean"
           },
           "status": {
             "type": "string"
@@ -2458,11 +2522,29 @@
           "name": {
             "type": "string"
           },
+          "password_policy": {
+            "oneOf": [
+              {
+                "type": "null"
+              },
+              {
+                "$ref": "#/components/schemas/PasswordPolicy",
+                "description": "APP-POLICY-001. Omitted means the Core default (min 8, max 128, no\ncharacter-class requirements)."
+              }
+            ]
+          },
           "redirect_urls": {
             "type": "array",
             "items": {
               "type": "string"
             }
+          },
+          "require_email_verification": {
+            "type": [
+              "boolean",
+              "null"
+            ],
+            "description": "Whether registration leaves the account unverified and email-gated.\nOmitted means `true` — the historical behaviour."
           }
         }
       },
@@ -2990,6 +3072,34 @@
           }
         }
       },
+      "PasswordPolicy": {
+        "type": "object",
+        "description": "APP-POLICY-001: per-app password rules, stored as `apps.password_policy`.\nThe defaults reproduce what `register.rs` hardcoded before this existed.",
+        "properties": {
+          "max_length": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "min_length": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "numeric_only": {
+            "type": "boolean",
+            "description": "Digits only — a PIN. Mutually exclusive with the `require_upper` /\n`require_symbol` flags, which no digit string can ever satisfy."
+          },
+          "require_digit": {
+            "type": "boolean"
+          },
+          "require_symbol": {
+            "type": "boolean"
+          },
+          "require_upper": {
+            "type": "boolean"
+          }
+        },
+        "additionalProperties": false
+      },
       "PatchMeRequest": {
         "type": "object",
         "required": [
@@ -3040,12 +3150,38 @@
       },
       "RegisterResponse": {
         "type": "object",
+        "description": "One shape for both outcomes: `message` is always present, and the token\nfields appear only when the app has `require_email_verification = false`\n(APP-POLICY-001) — so an SDK reads the same type either way.",
         "required": [
           "message"
         ],
         "properties": {
+          "access_token": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "expires_in": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "int64"
+          },
           "message": {
             "type": "string"
+          },
+          "refresh_token": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "token_type": {
+            "type": [
+              "string",
+              "null"
+            ]
           }
         }
       },
@@ -3221,6 +3357,64 @@
           },
           "token_type": {
             "type": "string"
+          }
+        }
+      },
+      "UpdateAppRequest": {
+        "type": "object",
+        "description": "Every field optional: a PATCH only touches what it names.",
+        "properties": {
+          "allowed_origins": {
+            "type": [
+              "array",
+              "null"
+            ],
+            "items": {
+              "type": "string"
+            }
+          },
+          "environment": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "name": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "password_policy": {
+            "oneOf": [
+              {
+                "type": "null"
+              },
+              {
+                "$ref": "#/components/schemas/PasswordPolicy"
+              }
+            ]
+          },
+          "redirect_urls": {
+            "type": [
+              "array",
+              "null"
+            ],
+            "items": {
+              "type": "string"
+            }
+          },
+          "require_email_verification": {
+            "type": [
+              "boolean",
+              "null"
+            ]
+          },
+          "status": {
+            "type": [
+              "string",
+              "null"
+            ]
           }
         }
       },

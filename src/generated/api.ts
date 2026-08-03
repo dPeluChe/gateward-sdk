@@ -227,7 +227,12 @@ export interface paths {
         delete: operations["delete_app"];
         options?: never;
         head?: never;
-        patch?: never;
+        /**
+         * APP-POLICY-001: `password_policy` and `require_email_verification` are
+         *     product decisions per app, so they need a way in. Every field is
+         *     optional — a PATCH only touches what it names.
+         */
+        patch: operations["update_app"];
         trace?: never;
     };
     "/v1/auth/change-password": {
@@ -386,9 +391,13 @@ export interface paths {
         get?: never;
         put?: never;
         /**
-         * Plan V6 §13.1: always the same response shape whether the email was
-         *     new or already existed in this identity_pool — no session/tokens
-         *     either way, login happens as a separate call.
+         * Plan V6 §13.1: the same response whether the email was new or already
+         *     existed in this identity_pool, and login happens as a separate call.
+         * @description APP-POLICY-001 gives an app an opt-out: with
+         *     `require_email_verification = false` the user is created active and
+         *     registration returns tokens directly. That trades away §13.1's
+         *     anti-enumeration property — a duplicate email gets no tokens, which is
+         *     observable — so it's an explicit per-app decision, off by default.
          */
         post: operations["register"];
         delete?: never;
@@ -680,7 +689,9 @@ export interface components {
             /** Format: uuid */
             identity_pool_id: string;
             name: string;
+            password_policy: components["schemas"]["PasswordPolicy"];
             redirect_urls: string[];
+            require_email_verification: boolean;
             status: string;
         };
         ChangePasswordRequest: {
@@ -755,7 +766,13 @@ export interface components {
             /** Format: uuid */
             identity_pool_id: string;
             name: string;
+            password_policy?: null | components["schemas"]["PasswordPolicy"];
             redirect_urls?: string[];
+            /**
+             * @description Whether registration leaves the account unverified and email-gated.
+             *     Omitted means `true` — the historical behaviour.
+             */
+            require_email_verification?: boolean | null;
         };
         CreateEcosystemRequest: {
             name: string;
@@ -921,6 +938,22 @@ export interface components {
             /** Format: int64 */
             offset?: number | null;
         };
+        /**
+         * @description APP-POLICY-001: per-app password rules, stored as `apps.password_policy`.
+         *     The defaults reproduce what `register.rs` hardcoded before this existed.
+         */
+        PasswordPolicy: {
+            max_length?: number;
+            min_length?: number;
+            /**
+             * @description Digits only — a PIN. Mutually exclusive with the `require_upper` /
+             *     `require_symbol` flags, which no digit string can ever satisfy.
+             */
+            numeric_only?: boolean;
+            require_digit?: boolean;
+            require_symbol?: boolean;
+            require_upper?: boolean;
+        };
         PatchMeRequest: {
             /** @description JSON object shallow-merged into the caller's own `local_metadata`. */
             metadata: unknown;
@@ -936,8 +969,18 @@ export interface components {
             email: string;
             password: string;
         };
+        /**
+         * @description One shape for both outcomes: `message` is always present, and the token
+         *     fields appear only when the app has `require_email_verification = false`
+         *     (APP-POLICY-001) — so an SDK reads the same type either way.
+         */
         RegisterResponse: {
+            access_token?: string | null;
+            /** Format: int64 */
+            expires_in?: number | null;
             message: string;
+            refresh_token?: string | null;
+            token_type?: string | null;
         };
         ResendVerificationEmailRequest: {
             email: string;
@@ -995,6 +1038,16 @@ export interface components {
             expires_in: number;
             refresh_token: string;
             token_type: string;
+        };
+        /** @description Every field optional: a PATCH only touches what it names. */
+        UpdateAppRequest: {
+            allowed_origins?: string[] | null;
+            environment?: string | null;
+            name?: string | null;
+            password_policy?: null | components["schemas"]["PasswordPolicy"];
+            redirect_urls?: string[] | null;
+            require_email_verification?: boolean | null;
+            status?: string | null;
         };
         UpdateUserStatus: {
             account_status: components["schemas"]["AccountStatus"];
@@ -1615,6 +1668,54 @@ export interface operations {
             };
         };
     };
+    update_app: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description App ID */
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["UpdateAppRequest"];
+            };
+        };
+        responses: {
+            /** @description App updated */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AppResponse"];
+                };
+            };
+            /** @description Invalid policy or empty name */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Not platform admin */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description App not found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
     change_password: {
         parameters: {
             query?: never;
@@ -1950,7 +2051,7 @@ export interface operations {
             };
         };
         responses: {
-            /** @description Registration accepted (or email already exists) */
+            /** @description Registration accepted (or email already exists). Carries tokens when the app does not require email verification */
             202: {
                 headers: {
                     [name: string]: unknown;

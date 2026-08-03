@@ -310,4 +310,62 @@ describe("self-service", () => {
       password: "correcthorse123",
     });
   });
+
+  /// APP-POLICY-001: an app with require_email_verification=false gets tokens
+  /// back from register. Dropping them would strand a user the Core already
+  /// considers signed in.
+  it("register signs in when the app returns tokens", async () => {
+    const { fetch } = stubFetch([
+      {
+        status: 202,
+        json: {
+          message: "registered",
+          access_token: fakeAccessToken(future()),
+          refresh_token: "refresh-reg",
+          token_type: "Bearer",
+          expires_in: 900,
+        },
+      },
+    ]);
+    const auth = new GatewardAuth({ baseUrl: BASE, appId: APP, fetch });
+    const seen: AuthStateChange[] = [];
+    auth.onAuthStateChange((c) => seen.push(c));
+
+    await auth.register("ana@app.com", "correcthorse123");
+
+    expect(seen.map((c) => c.event)).toEqual(["signed_in"]);
+    expect(await auth.getAccessToken()).toContain(".");
+  });
+
+  it("register leaves no session when the app requires verification", async () => {
+    const { fetch } = stubFetch([{ status: 202, json: { message: "check your inbox" } }]);
+    const auth = new GatewardAuth({ baseUrl: BASE, appId: APP, fetch });
+    const seen: AuthStateChange[] = [];
+    auth.onAuthStateChange((c) => seen.push(c));
+
+    await auth.register("ana@app.com", "correcthorse123");
+
+    expect(seen).toEqual([]);
+    await expect(auth.getAccessToken()).rejects.toThrow();
+  });
+
+  /// A half-filled response (tokens missing expires_in) must not be treated
+  /// as a session — persisting it would produce a token with no known expiry.
+  it("register ignores an incomplete token pair", async () => {
+    const { fetch } = stubFetch([
+      {
+        status: 202,
+        json: {
+          message: "registered",
+          access_token: fakeAccessToken(future()),
+          refresh_token: null,
+        },
+      },
+    ]);
+    const auth = new GatewardAuth({ baseUrl: BASE, appId: APP, fetch });
+
+    await auth.register("ana@app.com", "correcthorse123");
+
+    await expect(auth.getAccessToken()).rejects.toThrow();
+  });
 });

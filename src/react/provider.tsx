@@ -121,7 +121,8 @@ export function GatewardProvider({
 
   const register = useCallback(
     async (email: string, password: string): Promise<void> => {
-      // No tokens issued (the Core verifies email first), so no state change.
+      // Only signs in when the app skips email verification; the signed_in
+      // subscription below then loads the user.
       await run(() => client.register(email, password));
     },
     [client, run],

@@ -35,7 +35,9 @@ const auth = new GatewardAuth({
   storage: createWebStorage(), // opcional; por defecto en memoria
 });
 
-await auth.register("user@app.com", "s3cret"); // 202: el Core verifica email primero
+// 202 siempre. Devuelve tokens (y loguea) solo si la app corre con
+// require_email_verification: false.
+await auth.register("user@app.com", "s3cret");
 await auth.login("user@app.com", "s3cret");
 
 // Identidad del caller. Cacheada por sesión.
@@ -313,6 +315,29 @@ new GatewardAuth({ baseUrl, appId, retry: { maxRetries: 3, baseDelayMs: 200 } })
 - **429** → reintenta en cualquier método (el server rechazó antes de procesar), respetando `Retry-After`.
 - **Error de red / 502·503·504** → reintenta **solo** en métodos idempotentes (GET/HEAD/OPTIONS/DELETE/PUT). **Nunca** POST/PATCH — podrían re-ejecutarse (ej. un `sendEvent` duplicado).
 - Backoff exponencial con jitter, cortable por `AbortSignal`. Desactivado por default.
+
+## Política de password y alta
+
+Cada app define su propia política (`password_policy` en el `AppResponse`), así
+que el Core rechaza con mensajes específicos — `password must contain digits
+only`, `...at least one uppercase letter`, `...at most 4 characters` — en vez
+del viejo "mínimo 8" genérico. Renderizá el mensaje del server, no uno propio:
+
+```ts
+try {
+  await auth.register(email, password);
+} catch (err) {
+  if (err instanceof GatewardError && err.status === 400) {
+    setError(String((err.body as { error?: string })?.error ?? err.message));
+  }
+}
+```
+
+Si la app corre con `require_email_verification: false`, `register()` recibe el
+par de tokens, lo persiste y emite `signed_in` — el usuario queda logueado sin
+pasar por el correo. Con la verificación activa no hay sesión hasta que el
+email esté confirmado. **No asumas ninguno de los dos**: mirá `isAuthenticated`
+(o `status` en React) después del registro.
 
 ## Recuperación de cuenta
 

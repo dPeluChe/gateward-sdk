@@ -88,7 +88,8 @@ NextAuth, rol en el callback `session`.
   solo cambia de dónde sale el rol que le pasás.
 
 ⚠ El bootstrap "primer usuario = admin" (`hasAnyUsers` en dpeluche.dev) no
-tiene equivalente: hoy nada puede asignar `app_admin`. Pendiente del Core.
+tiene equivalente: hoy nada puede asignar `app_admin` (ROLE-001). Mientras
+tanto, guardá el rol en `metadata` y autorizá en tu backend.
 
 ## Patrón C — Store + interceptor (zustand/axios)
 
@@ -102,10 +103,10 @@ interceptor de axios los lea.
   sign-out global, cambiá el nombre de la clave.
 - El interceptor de axios → `auth.createFetch()`, o dejá axios y usá
   `auth.getAccessToken()` en el interceptor.
-- `register()` de feedby devolvía tokens (auto-login). Gateward hoy devuelve
-  202 y exige verificar el email primero, así que el flujo de alta cambia:
-  registro → "revisá tu correo" → login. (El Core está trabajando en un flag
-  por app para permitir el auto-login; hasta que exista, asumí el 202.)
+- `register()` de feedby devolvía tokens (auto-login). **Eso ya se puede**:
+  aprovisioná la app con `require_email_verification: false` y `register()`
+  persiste los tokens y emite `signed_in`. Con la verificación activa, el flujo
+  es registro → "revisá tu correo" → login.
 
 ## Patrón D — JWT propio + localStorage
 
@@ -203,10 +204,12 @@ Cosas que hoy **no** se pueden migrar tal cual:
 
 | Bloqueador | A quién afecta |
 |---|---|
-| Password mínimo 8 caracteres | ligamx, mundialito (PIN de 4 dígitos) |
-| Nada puede asignar `app_admin` | cualquier app con rol de administrador |
+| Nada puede asignar `app_admin` (ROLE-001) | cualquier app con rol de administrador |
 | `register` no acepta perfil (nombre) en el alta | tennispro, feedby, ligamx |
-| Sin cambio de email | tennispro |
+| Sin cambio de email (EMAIL-CHANGE-001) | tennispro |
 | Sin SDK de Python | skysset, feedby, henri (backends) |
+
+Resueltos por APP-POLICY-001: la política de password ahora es por app (el PIN
+de 4 dígitos de ligamx/mundialito ya entra) y el auto-login en el alta también.
 
 Están reportados al equipo del Core.
