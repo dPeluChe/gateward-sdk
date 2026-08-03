@@ -5,11 +5,20 @@ import {
 } from "../core/http.js";
 import { resolveDeviceId } from "../core/device.js";
 import { resolveTimezone } from "../core/timezone.js";
+import {
+  getMember,
+  listMembers,
+  setMemberRole,
+  type ListMembersQuery,
+  type MemberPage,
+} from "../core/members.js";
 import { AuthSession, type SessionOptions } from "../core/session.js";
 import type { TokenSet } from "../core/storage.js";
 import type {
   FetchLike,
   ForgotPasswordResponse,
+  MembershipResponse,
+  MembershipRole,
   RegisterResponse,
   ResendVerificationEmailResponse,
   SessionSummary,
@@ -39,6 +48,8 @@ export interface GatewardAuthOptions extends SessionOptions {
  *  logout, and the caller's own sessions. App-scoped — every request carries
  *  `X-Gateward-App-Id`. Token lifecycle comes from {@link AuthSession}. */
 export class GatewardAuth extends AuthSession {
+  private readonly appId: string;
+
   constructor(opts: GatewardAuthOptions) {
     const deviceId =
       opts.deviceId === false ? undefined : resolveDeviceId(opts.deviceId);
@@ -56,6 +67,53 @@ export class GatewardAuth extends AuthSession {
       }),
       opts,
     );
+    this.appId = opts.appId;
+  }
+
+  /** Members of this app. Requires `app:user_manage`, which only an
+   *  `app_admin` token carries. */
+  async listMembers(query: ListMembersQuery = {}): Promise<MemberPage> {
+    return listMembers(
+      this.http,
+      { bearer: await this.getAccessToken() },
+      this.appId,
+      query,
+    );
+  }
+
+  /** One membership in this app. */
+  async getMember(userId: string): Promise<MembershipResponse> {
+    return getMember(
+      this.http,
+      { bearer: await this.getAccessToken() },
+      this.appId,
+      userId,
+    );
+  }
+
+  /** Promote or demote a member of this app. The Core refuses (409) to demote
+   *  the last `app_admin`.
+   *
+   *  Scopes are re-derived at refresh, so changing your OWN role forces one —
+   *  otherwise the token keeps its old scopes for up to its 15-minute TTL and
+   *  the UI would gate on stale permissions. */
+  async setMemberRole(
+    userId: string,
+    role: MembershipRole,
+  ): Promise<MembershipResponse> {
+    const updated = await setMemberRole(
+      this.http,
+      { bearer: await this.getAccessToken() },
+      this.appId,
+      userId,
+      role,
+    );
+    const me = await this.getUser();
+    if (me.user_id === userId) {
+      await this.refresh();
+      await this.getUser({ force: true });
+    }
+    return updated;
   }
 
   /** Register a user into this app.

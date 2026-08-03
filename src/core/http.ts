@@ -104,6 +104,16 @@ export class HttpClient {
     path: string,
     opts: RequestOptions = {},
   ): Promise<T> {
+    return (await this.requestWithMeta<T>(method, path, opts)).data;
+  }
+
+  /** Like {@link request} but also surfaces `X-Total-Count`, which the Core
+   *  sets on every paginated list. */
+  async requestWithMeta<T>(
+    method: string,
+    path: string,
+    opts: RequestOptions = {},
+  ): Promise<{ data: T; totalCount: number | undefined }> {
     const url = new URL(this.baseUrl + path);
     for (const [k, v] of Object.entries(opts.query ?? {})) {
       if (v !== undefined && v !== null) url.searchParams.set(k, String(v));
@@ -173,7 +183,7 @@ export class HttpClient {
         throw error;
       }
       this.fire(this.hooks?.onResponse, { method, path, status: res.status });
-      return parsed as T;
+      return { data: parsed as T, totalCount: totalCountOf(res) };
     }
   }
 
@@ -275,6 +285,13 @@ async function parseBody(res: Response): Promise<unknown> {
   } catch {
     return text;
   }
+}
+
+function totalCountOf(res: Response): number | undefined {
+  const raw = res.headers.get("x-total-count");
+  if (!raw) return undefined;
+  const n = Number(raw);
+  return Number.isFinite(n) ? n : undefined;
 }
 
 function errorMessage(status: number, body: unknown): string {

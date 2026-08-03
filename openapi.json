@@ -846,6 +846,177 @@
         ]
       }
     },
+    "/v1/apps/{app_id}/members": {
+      "get": {
+        "tags": [
+          "memberships"
+        ],
+        "operationId": "list_app_members",
+        "parameters": [
+          {
+            "name": "app_id",
+            "in": "path",
+            "description": "App ID",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Members of the app",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/MembershipResponse"
+                  }
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Not platform admin, and not app:user_manage on this app"
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          },
+          {
+            "api_key": []
+          }
+        ]
+      }
+    },
+    "/v1/apps/{app_id}/members/{user_id}": {
+      "get": {
+        "tags": [
+          "memberships"
+        ],
+        "operationId": "get_app_member",
+        "parameters": [
+          {
+            "name": "app_id",
+            "in": "path",
+            "description": "App ID",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          },
+          {
+            "name": "user_id",
+            "in": "path",
+            "description": "User ID",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "The membership",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MembershipResponse"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Not platform admin, and not app:user_manage on this app"
+          },
+          "404": {
+            "description": "No membership for that user in this app"
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          },
+          {
+            "api_key": []
+          }
+        ]
+      },
+      "patch": {
+        "tags": [
+          "memberships"
+        ],
+        "summary": "Bootstrapping: the first `app_admin` of an app is promoted by a platform\nadmin (there is nobody with `app:user_manage` inside the app yet).",
+        "description": "The target's live access token keeps its old scopes until it expires or\nrefreshes — scopes are re-derived at `/v1/auth/refresh` (scopes.rs).",
+        "operationId": "update_member_role",
+        "parameters": [
+          {
+            "name": "app_id",
+            "in": "path",
+            "description": "App ID",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          },
+          {
+            "name": "user_id",
+            "in": "path",
+            "description": "User ID",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/UpdateRoleRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Role updated",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MembershipResponse"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Not platform admin, and not app:user_manage on this app"
+          },
+          "404": {
+            "description": "No membership for that user in this app"
+          },
+          "409": {
+            "description": "Would leave the app without an app_admin"
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          },
+          {
+            "api_key": []
+          }
+        ]
+      }
+    },
     "/v1/apps/{id}": {
       "delete": {
         "tags": [
@@ -3046,6 +3217,47 @@
           }
         }
       },
+      "MembershipResponse": {
+        "type": "object",
+        "required": [
+          "user_id",
+          "app_id",
+          "email",
+          "role",
+          "status",
+          "local_metadata",
+          "created_at",
+          "updated_at"
+        ],
+        "properties": {
+          "app_id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "created_at": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "email": {
+            "type": "string"
+          },
+          "local_metadata": {},
+          "role": {
+            "$ref": "#/components/schemas/MembershipRole"
+          },
+          "status": {
+            "type": "string"
+          },
+          "updated_at": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "user_id": {
+            "type": "string",
+            "format": "uuid"
+          }
+        }
+      },
       "MembershipRole": {
         "type": "string",
         "enum": [
@@ -3418,6 +3630,17 @@
           }
         }
       },
+      "UpdateRoleRequest": {
+        "type": "object",
+        "required": [
+          "role"
+        ],
+        "properties": {
+          "role": {
+            "$ref": "#/components/schemas/MembershipRole"
+          }
+        }
+      },
       "UpdateUserStatus": {
         "type": "object",
         "required": [
@@ -3549,6 +3772,10 @@
     {
       "name": "sessions",
       "description": "Session management"
+    },
+    {
+      "name": "memberships",
+      "description": "App membership roles (platform admin or app:user_manage)"
     },
     {
       "name": "management",

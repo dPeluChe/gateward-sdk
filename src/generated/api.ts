@@ -209,6 +209,44 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/v1/apps/{app_id}/members": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get: operations["list_app_members"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/apps/{app_id}/members/{user_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get: operations["get_app_member"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        /**
+         * Bootstrapping: the first `app_admin` of an app is promoted by a platform
+         *     admin (there is nobody with `app:user_manage` inside the app yet).
+         * @description The target's live access token keeps its old scopes until it expires or
+         *     refreshes — scopes are re-derived at `/v1/auth/refresh` (scopes.rs).
+         */
+        patch: operations["update_member_role"];
+        trace?: never;
+    };
     "/v1/apps/{id}": {
         parameters: {
             query?: never;
@@ -930,6 +968,20 @@ export interface components {
             /** Format: uuid */
             user_id: string;
         };
+        MembershipResponse: {
+            /** Format: uuid */
+            app_id: string;
+            /** Format: date-time */
+            created_at: string;
+            email: string;
+            local_metadata: unknown;
+            role: components["schemas"]["MembershipRole"];
+            status: string;
+            /** Format: date-time */
+            updated_at: string;
+            /** Format: uuid */
+            user_id: string;
+        };
         /** @enum {string} */
         MembershipRole: "member" | "app_admin";
         PaginationQuery: {
@@ -1048,6 +1100,9 @@ export interface components {
             redirect_urls?: string[] | null;
             require_email_verification?: boolean | null;
             status?: string | null;
+        };
+        UpdateRoleRequest: {
+            role: components["schemas"]["MembershipRole"];
         };
         UpdateUserStatus: {
             account_status: components["schemas"]["AccountStatus"];
@@ -1619,6 +1674,125 @@ export interface operations {
             };
             /** @description Not platform admin */
             403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    list_app_members: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description App ID */
+                app_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Members of the app */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["MembershipResponse"][];
+                };
+            };
+            /** @description Not platform admin, and not app:user_manage on this app */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    get_app_member: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description App ID */
+                app_id: string;
+                /** @description User ID */
+                user_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description The membership */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["MembershipResponse"];
+                };
+            };
+            /** @description Not platform admin, and not app:user_manage on this app */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description No membership for that user in this app */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    update_member_role: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description App ID */
+                app_id: string;
+                /** @description User ID */
+                user_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["UpdateRoleRequest"];
+            };
+        };
+        responses: {
+            /** @description Role updated */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["MembershipResponse"];
+                };
+            };
+            /** @description Not platform admin, and not app:user_manage on this app */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description No membership for that user in this app */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Would leave the app without an app_admin */
+            409: {
                 headers: {
                     [name: string]: unknown;
                 };

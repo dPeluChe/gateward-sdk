@@ -241,6 +241,34 @@ un predicado propio. Un visitante deslogueado en ruta protegida va a
 estándar, así que el mismo helper sirve en un loader de Remix, en hooks de
 SvelteKit o en Hono. Para casos a mano está `hasSessionMarker(cookieHeader)`.
 
+## Roles de app (miembros)
+
+`membership_role` es el rol propio de Gateward: `member` o `app_admin`. Se
+gestiona desde el backend de la app con su API key (scope `app:user_manage`),
+sin pedir prestado un token de platform admin:
+
+```ts
+const { members, total } = await gw.listMembers(APP_ID, { limit: 50 });
+await gw.setMemberRole(APP_ID, userId, "app_admin");
+```
+
+Un usuario `app_admin` puede hacer lo mismo desde el browser:
+`auth.listMembers()` / `auth.setMemberRole(userId, role)`, siempre acotado a su
+propia app.
+
+Tres cosas que muerden:
+
+- **Bootstrap.** El primer `app_admin` lo promueve un platform admin: dentro de
+  la app todavía no hay nadie con `app:user_manage`. Es huevo-gallina inevitable.
+- **Desfase de scopes.** Los scopes se re-derivan en `/v1/auth/refresh`, así que
+  un recién promovido conserva los viejos hasta 15 min. Si cambiás **tu propio**
+  rol, `auth.setMemberRole()` fuerza el refresh por vos. Si lo cambia otro, el
+  usuario ve el cambio en su próximo refresh.
+- **409 al degradar al último admin.** Un `app_admin` no puede dejar la app sin
+  administradores; solo un platform admin puede. El SDK propaga el 409.
+
+Cruzar a otra app del mismo ecosistema es **403**, en lectura y escritura.
+
 ## Server-to-server (API key)
 
 ```ts
