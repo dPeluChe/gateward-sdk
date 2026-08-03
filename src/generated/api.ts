@@ -28,6 +28,22 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/.well-known/openid-configuration": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get: operations["openid_configuration"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/v1/admin/api-keys": {
         parameters: {
             query?: never;
@@ -127,6 +143,22 @@ export interface paths {
         get: operations["list_users"];
         put?: never;
         post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/admin/users/import": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post: operations["import_users"];
         delete?: never;
         options?: never;
         head?: never;
@@ -273,6 +305,32 @@ export interface paths {
         patch: operations["update_app"];
         trace?: never;
     };
+    "/v1/auth/change-email": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * EMAIL-CHANGE-001: step one. The new address is parked in `pending_email`
+         *     and a token goes to it — nothing about the account changes until whoever
+         *     reads that inbox proves it.
+         * @description The response is the same whether or not the address was available (§13.1):
+         *     an authenticated user must not be able to probe an identity_pool for which
+         *     emails exist. That does mean a typo'd address that happens to belong to
+         *     someone else looks identical to success — the confirmation mail that never
+         *     arrives is the signal.
+         */
+        post: operations["change_email"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/v1/auth/change-password": {
         parameters: {
             query?: never;
@@ -291,6 +349,35 @@ export interface paths {
          *     used to change their password is hostile, not safer.
          */
         post: operations["change_password"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/auth/delete-account": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * SELF-DELETE-001: GDPR's right to erasure, and an App Store requirement for
+         *     any app that ships to mobile. Until now only a platform admin could touch
+         *     `account_status`, so a user had no way out on their own.
+         * @description Scope is the calling app: leaving tennispro does not delete you from
+         *     newbase. The identity itself is only anonymized once no membership is left
+         *     anywhere in its identity_pool.
+         *
+         *     Soft delete, not `DELETE FROM users`: `events` references the user, and
+         *     erasing the audit trail of an account is its own problem. The email is
+         *     anonymized instead, which satisfies erasure and frees the address for
+         *     re-registration.
+         */
+        post: operations["delete_account"];
         delete?: never;
         options?: never;
         head?: never;
@@ -498,6 +585,29 @@ export interface paths {
         put?: never;
         /** Plan V6 §12. No AppContext needed — same reasoning as reset_password. */
         post: operations["verify_email"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/auth/verify-email-change": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Step two. Unauthenticated on purpose: the token is the authorization, and
+         *     the link is opened wherever the new inbox is read — often another device.
+         * @description Every session in the pool is revoked, same as a password reset (§11.2):
+         *     the login identifier just changed, and anyone still holding a session was
+         *     authenticated against the old one.
+         */
+        post: operations["verify_email_change"];
         delete?: never;
         options?: never;
         head?: never;
@@ -732,6 +842,17 @@ export interface components {
             require_email_verification: boolean;
             status: string;
         };
+        ChangeEmailRequest: {
+            new_email: string;
+            /**
+             * @description Required whenever the account has a password — an email change is an
+             *     account takeover vector, so a stolen access token must not suffice.
+             */
+            password?: string | null;
+        };
+        ChangeEmailResponse: {
+            message: string;
+        };
         ChangePasswordRequest: {
             current_password: string;
             new_password: string;
@@ -821,6 +942,13 @@ export interface components {
             mode: components["schemas"]["IdentityMode"];
             name: string;
         };
+        DeleteAccountRequest: {
+            /**
+             * @description Required whenever the account has a password. A valid access token is
+             *     not enough on its own for an irreversible action.
+             */
+            password?: string | null;
+        };
         EcosystemResponse: {
             /** Format: uuid */
             id: string;
@@ -874,6 +1002,47 @@ export interface components {
             mode: components["schemas"]["IdentityMode"];
             name: string;
             status: string;
+        };
+        ImportResult: {
+            email: string;
+            error?: string | null;
+            /**
+             * @description `imported` (new identity), `linked` (identity already in the pool, got
+             *     a membership in this app), `skipped` (already a member), `failed`.
+             */
+            outcome: string;
+            /** Format: uuid */
+            user_id?: string | null;
+        };
+        ImportUser: {
+            account_status?: null | components["schemas"]["AccountStatus"];
+            email: string;
+            /**
+             * @description Imported users come from a system where they already existed, so both
+             *     default to "already good": active and verified.
+             */
+            email_verified?: boolean | null;
+            /** @description Written to the membership's `local_metadata` (name, tier, legacy id). */
+            metadata?: unknown;
+            /**
+             * @description Argon2 (`$argon2…`), bcrypt (`$2a/2b/2y$`) or Django
+             *     (`pbkdf2_sha256$…`). Anything else is rejected here rather than
+             *     becoming a user who can never log in.
+             */
+            password_hash: string;
+            role?: null | components["schemas"]["MembershipRole"];
+        };
+        ImportUsersRequest: {
+            /** Format: uuid */
+            app_id: string;
+            users: components["schemas"]["ImportUser"][];
+        };
+        ImportUsersResponse: {
+            failed: number;
+            imported: number;
+            linked: number;
+            results: components["schemas"]["ImportResult"][];
+            skipped: number;
         };
         /**
          * @description JWK as published in the JWKS endpoint. RFC 7517 §4.
@@ -984,6 +1153,20 @@ export interface components {
         };
         /** @enum {string} */
         MembershipRole: "member" | "app_admin";
+        OpenIdConfiguration: {
+            claims_supported: string[];
+            grant_types_supported: string[];
+            id_token_signing_alg_values_supported: string[];
+            issuer: string;
+            jwks_uri: string;
+            response_types_supported: string[];
+            subject_types_supported: string[];
+            /**
+             * @description Where a client trades credentials for tokens. Not an OAuth2 token
+             *     endpoint — it takes `{email, password}` plus `X-Gateward-App-Id`.
+             */
+            token_endpoint: string;
+        };
         PaginationQuery: {
             /** Format: int64 */
             limit?: number | null;
@@ -1019,6 +1202,13 @@ export interface components {
         };
         RegisterRequest: {
             email: string;
+            /**
+             * @description REGISTER-PROFILE-001: profile fields the app collects at signup (name,
+             *     phone, preferences), written straight into the new membership's
+             *     `local_metadata`. Without this an app has to follow every registration
+             *     with a second authenticated call just to store the name it already had.
+             */
+            metadata?: unknown;
             password: string;
         };
         /**
@@ -1135,6 +1325,9 @@ export interface components {
             /** @description Why the account is blocked/banned (AUDIT-STATUS-001). Null when active. */
             status_reason?: string | null;
         };
+        VerifyEmailChangeRequest: {
+            token: string;
+        };
         VerifyEmailRequest: {
             token: string;
         };
@@ -1163,6 +1356,26 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["JwksResponse"];
+                };
+            };
+        };
+    };
+    openid_configuration: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OIDC discovery document */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["OpenIdConfiguration"];
                 };
             };
         };
@@ -1405,6 +1618,51 @@ export interface operations {
             };
             /** @description Not platform admin */
             403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    import_users: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ImportUsersRequest"];
+            };
+        };
+        responses: {
+            /** @description Per-user outcome; a rejected row does not fail the batch */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ImportUsersResponse"];
+                };
+            };
+            /** @description Empty or oversized batch */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Not platform admin, and not users:write_app on this app */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description App not found */
+            404: {
                 headers: {
                     [name: string]: unknown;
                 };
@@ -1890,6 +2148,58 @@ export interface operations {
             };
         };
     };
+    change_email: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ChangeEmailRequest"];
+            };
+        };
+        responses: {
+            /** @description Confirmation sent if the address can be used */
+            202: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ChangeEmailResponse"];
+                };
+            };
+            /** @description Invalid or disposable address */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Not authenticated, or wrong password */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Service accounts, or a session not scoped to an app */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Rate limited */
+            429: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
     change_password: {
         parameters: {
             query?: never;
@@ -1926,6 +2236,56 @@ export interface operations {
             };
             /** @description Service accounts have no password */
             403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Rate limited */
+            429: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    delete_account: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["DeleteAccountRequest"];
+            };
+        };
+        responses: {
+            /** @description Account deleted */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Not authenticated, or wrong password */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Service accounts, or a session not scoped to an app */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description No membership in the caller's app */
+            404: {
                 headers: {
                     [name: string]: unknown;
                 };
@@ -2349,6 +2709,42 @@ export interface operations {
             };
             /** @description Rate limited */
             429: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    verify_email_change: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["VerifyEmailChangeRequest"];
+            };
+        };
+        responses: {
+            /** @description Email changed, sessions revoked */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Invalid/expired token or no pending change */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description The address was taken while the change was pending */
+            409: {
                 headers: {
                     [name: string]: unknown;
                 };

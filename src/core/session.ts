@@ -163,16 +163,24 @@ export abstract class AuthSession {
   async authedRequest<T>(
     method: string,
     path: string,
-    opts: { body?: unknown; query?: Record<string, unknown> } = {},
+    opts: {
+      body?: unknown;
+      query?: Record<string, unknown>;
+      /** Skip the refresh-and-retry. Required on endpoints where a 401 also
+       *  means "wrong password" — retrying can't tell the two apart and would
+       *  replay the attempt against the rate limit. */
+      retryOn401?: boolean;
+    } = {},
   ): Promise<T> {
+    const { retryOn401 = true, ...rest } = opts;
     const token = await this.getAccessToken();
     try {
-      return await this.http.request<T>(method, path, { ...opts, bearer: token });
+      return await this.http.request<T>(method, path, { ...rest, bearer: token });
     } catch (err) {
-      if (err instanceof GatewardError && err.status === 401) {
+      if (retryOn401 && err instanceof GatewardError && err.status === 401) {
         const refreshed = await this.runRefresh();
         return this.http.request<T>(method, path, {
-          ...opts,
+          ...rest,
           bearer: refreshed.accessToken,
         });
       }

@@ -299,6 +299,21 @@ describe("self-service", () => {
     await expect(auth.getAccessToken()).rejects.toThrow();
   });
 
+  it("register carries the signup profile as metadata", async () => {
+    const { fetch, calls } = stubFetch([{ status: 202, json: { message: "ok" } }]);
+    const auth = new GatewardAuth({ baseUrl: BASE, appId: APP, fetch });
+
+    await auth.register("ana@app.com", "correcthorse123", {
+      metadata: { display_name: "Ana", phone: "+52" },
+    });
+
+    expect(calls[0]!.body).toEqual({
+      email: "ana@app.com",
+      password: "correcthorse123",
+      metadata: { display_name: "Ana", phone: "+52" },
+    });
+  });
+
   it("register sends only the credentials", async () => {
     const { fetch, calls } = stubFetch([{ status: 202, json: { message: "ok" } }]);
     const auth = new GatewardAuth({ baseUrl: BASE, appId: APP, fetch });
@@ -367,5 +382,106 @@ describe("self-service", () => {
     await auth.register("ana@app.com", "correcthorse123");
 
     await expect(auth.getAccessToken()).rejects.toThrow();
+  });
+});
+
+describe("account lifecycle", () => {
+  it("changeEmail sends the new address and password", async () => {
+    const { fetch, calls } = stubFetch([tokenResponse(future()), { status: 202 }]);
+    const auth = new GatewardAuth({ baseUrl: BASE, appId: APP, fetch });
+    await auth.login("ana@app.com", "pw");
+
+    await auth.changeEmail("nueva@app.com", "pw");
+
+    expect(calls[1]!.url).toBe(`${BASE}/v1/auth/change-email`);
+    expect(calls[1]!.body).toEqual({ new_email: "nueva@app.com", password: "pw" });
+  });
+
+  it("omits the password when the account has none", async () => {
+    const { fetch, calls } = stubFetch([tokenResponse(future()), { status: 202 }]);
+    const auth = new GatewardAuth({ baseUrl: BASE, appId: APP, fetch });
+    await auth.login("ana@app.com", "pw");
+
+    await auth.changeEmail("nueva@app.com");
+
+    expect(calls[1]!.body).toEqual({ new_email: "nueva@app.com" });
+  });
+
+  /// Confirming revokes every session in the pool, so the stored tokens are
+  /// already dead — keeping them would leave the UI signed in over nothing.
+  it("verifyEmailChange clears the local session", async () => {
+    const { fetch } = stubFetch([tokenResponse(future()), { status: 204 }]);
+    const auth = new GatewardAuth({ baseUrl: BASE, appId: APP, fetch });
+    await auth.login("ana@app.com", "pw");
+    const seen: AuthStateChange[] = [];
+    auth.onAuthStateChange((c) => seen.push(c));
+
+    await auth.verifyEmailChange("tok-123");
+
+    expect(seen.map((c) => c.event)).toEqual(["signed_out"]);
+    await expect(auth.getAccessToken()).rejects.toThrow();
+  });
+
+  it("keeps the session when the confirmation token is rejected", async () => {
+    const { fetch } = stubFetch([
+      tokenResponse(future()),
+      { status: 400, json: { error: "invalid or expired token" } },
+    ]);
+    const auth = new GatewardAuth({ baseUrl: BASE, appId: APP, fetch });
+    await auth.login("ana@app.com", "pw");
+
+    await expect(auth.verifyEmailChange("bad")).rejects.toThrow();
+
+    expect(await auth.getAccessToken()).toContain(".");
+  });
+
+  it("deleteAccount sends the password and drops the session", async () => {
+    const { fetch, calls } = stubFetch([tokenResponse(future()), { status: 204 }]);
+    const auth = new GatewardAuth({ baseUrl: BASE, appId: APP, fetch });
+    await auth.login("ana@app.com", "pw");
+    const seen: AuthStateChange[] = [];
+    auth.onAuthStateChange((c) => seen.push(c));
+
+    await auth.deleteAccount("pw");
+
+    expect(calls[1]!.url).toBe(`${BASE}/v1/auth/delete-account`);
+    expect(calls[1]!.body).toEqual({ password: "pw" });
+    expect(seen.map((c) => c.event)).toEqual(["signed_out"]);
+  });
+
+  /// A wrong password answers 401 — the same code as an expired token. If the
+  /// SDK retried, it would burn a refresh and replay the attempt against the
+  /// rate limit without ever being able to tell the two apart.
+  it("does not refresh-and-retry when the password is wrong", async () => {
+    const { fetch, calls } = stubFetch([
+      tokenResponse(future()),
+      { status: 401, json: { error: "wrong password" } },
+    ]);
+    const auth = new GatewardAuth({ baseUrl: BASE, appId: APP, fetch });
+    await auth.login("ana@app.com", "pw");
+
+    await expect(auth.deleteAccount("wrong")).rejects.toThrow(/401/);
+
+    // login + the single delete attempt: no refresh, no replay.
+    expect(calls.map((c) => c.url)).toEqual([
+      `${BASE}/v1/auth/login`,
+      `${BASE}/v1/auth/delete-account`,
+    ]);
+    expect(await auth.getAccessToken()).toContain(".");
+  });
+
+  it("does not retry changeEmail or changePassword on a 401 either", async () => {
+    const { fetch, calls } = stubFetch([
+      tokenResponse(future()),
+      { status: 401, json: { error: "wrong password" } },
+      { status: 401, json: { error: "wrong password" } },
+    ]);
+    const auth = new GatewardAuth({ baseUrl: BASE, appId: APP, fetch });
+    await auth.login("ana@app.com", "pw");
+
+    await expect(auth.changeEmail("x@app.com", "wrong")).rejects.toThrow(/401/);
+    await expect(auth.changePassword("wrong", "otra-larga")).rejects.toThrow(/401/);
+
+    expect(calls.filter((c) => c.url.endsWith("/v1/auth/refresh"))).toHaveLength(0);
   });
 });

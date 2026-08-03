@@ -40,9 +40,11 @@ const auth = new GatewardAuth({
   storage: createWebStorage(), // opcional; por defecto en memoria
 });
 
-// 202 siempre. Devuelve tokens (y loguea) solo si la app corre con
-// require_email_verification: false.
-await auth.register("user@app.com", "s3cret");
+// El perfil de alta viaja en el mismo registro. Devuelve tokens (y loguea)
+// solo si la app corre con require_email_verification: false.
+await auth.register("user@app.com", "s3cret", {
+  metadata: { display_name: "Ana", phone: "+52" },
+});
 await auth.login("user@app.com", "s3cret");
 
 // Identidad del caller. Cacheada por sesión.
@@ -371,6 +373,33 @@ par de tokens, lo persiste y emite `signed_in` — el usuario queda logueado sin
 pasar por el correo. Con la verificación activa no hay sesión hasta que el
 email esté confirmado. **No asumas ninguno de los dos**: mirá `isAuthenticated`
 (o `status` en React) después del registro.
+
+## Email y baja de cuenta
+
+```ts
+await auth.changeEmail("nueva@app.com", password); // 202: manda confirmación
+await auth.verifyEmailChange(token);               // confirma → es un logout
+await auth.deleteAccount(password);                // baja de ESTA app
+```
+
+Tres cosas que conviene reflejar en la UI:
+
+- **`changeEmail` no dice si la dirección ya está ocupada.** Responde igual que
+  si estuviera libre (anti-enumeración), así que un typo que cae en el correo de
+  otro se ve como éxito. Decile al usuario que el cambio solo aplica cuando
+  confirme **desde esa bandeja**.
+- **Confirmar el cambio revoca todas las sesiones del pool.** El SDK lo trata
+  como logout y limpia la sesión local: mandá al usuario a login con el email
+  nuevo.
+- **`deleteAccount` es por app.** Darse de baja de una no lo borra de las otras
+  del ecosistema; la identidad se anonimiza recién cuando no le queda ninguna
+  membership.
+
+Las tres piden el password si la cuenta tiene uno — un access token robado no
+alcanza para una acción irreversible. Por eso mismo el SDK **no reintenta** un
+401 en estos endpoints: ahí un 401 también significa "password incorrecto", y
+reintentar gastaría un refresh y repetiría el intento contra el rate limit sin
+poder distinguir los dos casos.
 
 ## Recuperación de cuenta
 
