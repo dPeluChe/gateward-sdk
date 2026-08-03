@@ -916,6 +916,49 @@
         ]
       }
     },
+    "/v1/apps/current": {
+      "get": {
+        "tags": [
+          "apps"
+        ],
+        "operationId": "get_current_app_config",
+        "parameters": [
+          {
+            "name": "X-Gateward-App-Id",
+            "in": "header",
+            "description": "App whose public config is requested",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Public configuration of the app",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AppConfigResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Missing or malformed X-Gateward-App-Id"
+          },
+          "403": {
+            "description": "App is not active, or Origin is not allowlisted"
+          },
+          "404": {
+            "description": "No such app"
+          }
+        },
+        "security": [
+          {}
+        ]
+      }
+    },
     "/v1/apps/{app_id}/members": {
       "get": {
         "tags": [
@@ -2616,6 +2659,41 @@
           }
         }
       },
+      "AppConfigResponse": {
+        "type": "object",
+        "required": [
+          "app_id",
+          "name",
+          "environment",
+          "identity_mode",
+          "require_email_verification",
+          "password_policy"
+        ],
+        "properties": {
+          "app_id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "environment": {
+            "type": "string",
+            "description": "`production` | `test` | `staging` | `development`. Constrained in the\nschema (migration 0028) — an SDK can safely refuse to start when this\ndisagrees with what the app declared."
+          },
+          "identity_mode": {
+            "$ref": "#/components/schemas/IdentityMode"
+          },
+          "name": {
+            "type": "string"
+          },
+          "password_policy": {
+            "$ref": "#/components/schemas/PasswordPolicy",
+            "description": "The exact rules `register`, `reset-password` and `change-password` will\napply, so a client can validate before the round-trip."
+          },
+          "require_email_verification": {
+            "type": "boolean",
+            "description": "Whether `POST /v1/auth/register` leaves the account email-gated. When\nfalse, registration returns tokens directly."
+          }
+        }
+      },
       "AppResponse": {
         "type": "object",
         "required": [
@@ -4209,6 +4287,10 @@
     {
       "name": "memberships",
       "description": "App membership roles (platform admin or app:user_manage)"
+    },
+    {
+      "name": "apps",
+      "description": "Public per-app configuration"
     },
     {
       "name": "management",

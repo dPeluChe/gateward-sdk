@@ -40,11 +40,18 @@ export {
   decodeClaims,
   type VerifyOptions,
 } from "./jwt/verify.js";
+export {
+  checkPassword,
+  EnvironmentMismatchError,
+  type AppEnvironment,
+} from "./core/app-config.js";
 export type {
   ListMembersQuery,
   MemberPage,
 } from "./core/members.js";
 export type {
+  AppConfig,
+  PasswordPolicy,
   GatewardClaims,
   GatewardUser,
   MembershipResponse,

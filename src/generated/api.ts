@@ -241,6 +241,22 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/v1/apps/current": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get: operations["get_current_app_config"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/v1/apps/{app_id}/members": {
         parameters: {
             query?: never;
@@ -825,6 +841,28 @@ export interface components {
             owner_id: string;
             scopes: string[];
             status: string;
+        };
+        AppConfigResponse: {
+            /** Format: uuid */
+            app_id: string;
+            /**
+             * @description `production` | `test` | `staging` | `development`. Constrained in the
+             *     schema (migration 0028) — an SDK can safely refuse to start when this
+             *     disagrees with what the app declared.
+             */
+            environment: string;
+            identity_mode: components["schemas"]["IdentityMode"];
+            name: string;
+            /**
+             * @description The exact rules `register`, `reset-password` and `change-password` will
+             *     apply, so a client can validate before the round-trip.
+             */
+            password_policy: components["schemas"]["PasswordPolicy"];
+            /**
+             * @description Whether `POST /v1/auth/register` leaves the account email-gated. When
+             *     false, registration returns tokens directly.
+             */
+            require_email_verification: boolean;
         };
         AppResponse: {
             allowed_origins: string[];
@@ -1932,6 +1970,50 @@ export interface operations {
             };
             /** @description Not platform admin */
             403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    get_current_app_config: {
+        parameters: {
+            query?: never;
+            header: {
+                /** @description App whose public config is requested */
+                "X-Gateward-App-Id": string;
+            };
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Public configuration of the app */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AppConfigResponse"];
+                };
+            };
+            /** @description Missing or malformed X-Gateward-App-Id */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description App is not active, or Origin is not allowlisted */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description No such app */
+            404: {
                 headers: {
                     [name: string]: unknown;
                 };
