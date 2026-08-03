@@ -33,14 +33,15 @@ const auth = new GatewardAuth({
   storage: createWebStorage(), // opcional; por defecto en memoria
 });
 
-// El perfil de alta (nombre, locale…) viaja en el mismo registro.
-await auth.register("user@app.com", "s3cret", {
-  metadata: { display_name: "Ana", locale: "es-MX" },
-});
+await auth.register("user@app.com", "s3cret"); // 202: el Core verifica email primero
 await auth.login("user@app.com", "s3cret");
 
-// Identidad del caller: { id, email, role, metadata, ... }. Cacheada por sesión.
+// Identidad del caller. Cacheada por sesión.
 const user = await auth.getUser();
+
+// Perfil propio (merge shallow) y password.
+await auth.updateProfile({ display_name: "Ana", locale: "es-MX" });
+await auth.changePassword("s3cret", "otra-mas-larga");
 
 // getAccessToken() refresca solo si el token está por expirar (single-flight).
 const token = await auth.getAccessToken();
@@ -48,6 +49,7 @@ const token = await auth.getAccessToken();
 // Helper autenticado: adjunta el Bearer y reintenta 1 vez tras un 401 (refresh).
 const sessions = await auth.listSessions();
 await auth.revokeSession(sessions[0].id);
+await auth.revokeAllSessions(); // cerrar en todos lados, menos acá
 
 await auth.logout(); // revoca en el server y limpia el storage (best-effort)
 ```
@@ -57,17 +59,22 @@ await auth.logout(); // revoca en el server y limpia el storage (best-effort)
 
 ### Usuario actual
 
-`getUser()` pega a `GET /v1/auth/me` y devuelve `{ id, email, account_status,
-role, metadata, scopes, ... }` — la identidad más el membership en el app del
-token. Se cachea mientras dure la sesión (las llamadas concurrentes comparten
-un solo request); pasá `{ force: true }` después de escribir metadata.
+`getUser()` pega a `GET /v1/auth/me` y devuelve `{ user_id, email,
+email_verified, account_status, actor_kind, app_id, membership_role, scopes,
+metadata, created_at }` — la identidad más el membership en el app del token.
+Se cachea mientras dure la sesión (las llamadas concurrentes comparten un solo
+request); `{ force: true }` re-consulta.
 
-`role` es el rol propio de Gateward (`member` / `app_admin`). El rol de **tu**
-app, junto con el nombre visible, vive en `metadata` — es lo que mandaste en
-`register()` o lo que tu backend escribió con `updateUserMetadata()`.
+`membership_role` es el rol propio de Gateward (`member` / `app_admin`), y es
+`null` en un token de platform-admin. El rol de **tu** app, junto con el nombre
+visible, vive en `metadata`.
 
-> `metadata` la escribe el usuario al registrarse. Es texto que él eligió:
-> úsala para mostrar, nunca para autorizar.
+`updateProfile(metadata)` hace merge shallow sobre ese `metadata` (scope
+`users:write_own`) y refresca el cache — no hace falta que tu backend proxee
+con una API key.
+
+> `metadata` la escribe el propio usuario. Es texto que él eligió: úsala para
+> mostrar, **nunca para autorizar**.
 
 `getClaims()` decodifica el access token actual sin round-trip. **No están
 verificados** — vienen del storage de este mismo cliente, así que solo sirven
