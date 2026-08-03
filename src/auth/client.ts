@@ -58,13 +58,21 @@ export class GatewardAuth extends AuthSession {
     );
   }
 
-  /** Register a user into this app. Does not log in — the Core requires email
-   *  verification first. Set the profile afterwards with
-   *  {@link updateProfile}. */
-  register(email: string, password: string): Promise<RegisterResponse> {
-    return this.http.request<RegisterResponse>("POST", "/v1/auth/register", {
-      body: { email, password },
-    });
+  /** Register a user into this app.
+   *
+   *  Logs in only when the app runs with `require_email_verification: false`
+   *  (APP-POLICY-001) — then the Core returns tokens, this persists them and
+   *  emits `signed_in`. Otherwise there is no session until the email is
+   *  verified. Check `isAuthenticated` rather than assuming either way. */
+  async register(email: string, password: string): Promise<RegisterResponse> {
+    const res = await this.http.request<RegisterResponse>(
+      "POST",
+      "/v1/auth/register",
+      { body: { email, password } },
+    );
+    const tokens = tokensOf(res);
+    if (tokens) await this.persist(tokens);
+    return res;
   }
 
   /** Log in and persist the returned token pair. */
@@ -145,4 +153,18 @@ export class GatewardAuth extends AuthSession {
       { body: { email } },
     );
   }
+}
+
+/** The token pair a register response carries, or `null` when the app still
+ *  requires email verification. */
+function tokensOf(res: RegisterResponse): TokenResponse | null {
+  if (!res.access_token || !res.refresh_token || res.expires_in == null) {
+    return null;
+  }
+  return {
+    access_token: res.access_token,
+    refresh_token: res.refresh_token,
+    token_type: res.token_type ?? "Bearer",
+    expires_in: res.expires_in,
+  };
 }
