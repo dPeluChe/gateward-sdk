@@ -3,9 +3,8 @@
 Por qué el ciclo de sesión del SDK está armado así. La guía de uso está en el
 [README](../../README.md); esto es el rationale que no cabe en un comentario.
 
-Todo lo de acá salió de auditar cómo hacen login los 7 proyectos candidatos a
-integrar Gateward: tennispro, ligamx/mundialito, skysset, dpeluche.dev, newbase,
-newfeedby y henri.
+Las decisiones salieron de auditar cómo resuelven login varias aplicaciones
+reales antes de diseñar el SDK.
 
 ---
 
@@ -23,9 +22,8 @@ reaccionan distinto:
 
 Antes de esto, un refresh token muerto limpiaba el storage **en silencio** y la
 app seguía pintando una shell autenticada sobre una sesión que ya no existía.
-henri se topó con el mismo problema y se armó su propio bus
-(`authEvents.emitForcedLogout()` en `src/lib/api/authEvents.ts`) justo para
-taparlo.
+Más de una app auditada había tenido que armarse su propio bus de forced-logout
+justo para tapar eso.
 
 Un fallo de refresh que **no** sea 401 no emite nada: la sesión puede seguir
 siendo válida y no hay razón para tirarla por un 500 o un blip de red.
@@ -58,9 +56,9 @@ con `GatewardServer.verifyToken`, que sí valida ES256 contra el JWKS.
 ## `createFetch()` y el alcance del token
 
 `authedRequest()` solo pega contra el Core. Las apps también necesitan el token
-en llamadas a **su propio** backend, y los 7 proyectos escribieron el mismo
-interceptor a mano (henri con middleware de openapi-fetch, newfeedby con axios,
-tennispro pasando `sessionToken` en cada acción de Convex).
+en llamadas a **su propio** backend, y todas las auditadas habían escrito el
+mismo interceptor a mano: middleware de openapi-fetch, interceptor de axios, o
+pasar el token a mano en cada llamada.
 
 Tres decisiones:
 
@@ -83,8 +81,8 @@ reproducir su body — `openapi-fetch` llama `fetch(request)`, no
 
 Los tokens viven en Web Storage, que el server nunca ve. Sin ayuda, un framework
 SSR no distingue un request logueado de uno que no, y toda ruta protegida
-renderiza una shell que redirige desde el cliente. 3 de los 7 proyectos son
-Next; henri ya se había inventado la cookie `henri.authed` para esto.
+renderiza una shell que redirige desde el cliente. Varias apps Next auditadas ya
+se habían inventado una cookie marcadora propia para esto.
 
 `withSessionMarker()` mantiene una cookie **no secreta** pegada al ciclo de
 tokens: se escribe en cada `set`, se borra en cada `clear`. Una sesión expirada
@@ -138,8 +136,8 @@ usarse juntas.
 
 `status` arranca en `loading`, no en `unauthenticated`. Tratar "todavía no hay
 user" como "deslogueado" hace parpadear la pantalla de login en cada reload
-mientras `/v1/auth/me` está en vuelo. Es el `AuthStatus` que ya usan henri y
-tennispro.
+mientras `/v1/auth/me` está en vuelo. Es el mismo `AuthStatus` de tres estados
+que las apps auditadas ya modelaban a mano.
 
 Un 401 en el bootstrap es el camino normal de "no hay sesión" y no llena
 `error`. Cualquier **otro** fallo (500, red) sí se registra y no se disfraza de
