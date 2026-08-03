@@ -8,11 +8,8 @@ export interface FetchSession {
 }
 
 export interface AuthedFetchOptions {
-  /** Restrict the `Authorization` header to these origins (e.g.
-   *  `["https://api.myapp.com"]`). Omit to attach it to every request made
-   *  through this fetch — fine when you hand it to one API client, dangerous
-   *  as a global `fetch` replacement. Requests to other origins still go
-   *  through, just unsigned. */
+  /** Only sign these origins. Omit and EVERY request through this fetch is
+   *  signed — never use it as a global `fetch`, you'd leak the token. */
   origins?: string[];
   /** Refresh and retry once after a 401 from your API (default `true`). */
   retryOn401?: boolean;
@@ -20,14 +17,9 @@ export interface AuthedFetchOptions {
   fetch?: FetchLike;
 }
 
-/** A `fetch` that signs requests with the session's access token: refreshes
- *  when the token is near expiry, and retries once on a 401 with a fresh one.
- *
- *  Drop-in for any client that takes a `fetch` (openapi-fetch, ky, an axios
- *  adapter). Every surveyed integrator hand-rolled this same interceptor.
- *
- *  Signed out is not an error: the request goes through unsigned so public
- *  endpoints keep working and your API answers with its own 401. */
+/** A `fetch` that signs requests with the session's access token, refreshing
+ *  near expiry and retrying once on a 401.
+ *  See docs/ARCHITECTURE/SESSION.md. */
 export function createAuthedFetch(
   session: FetchSession,
   opts: AuthedFetchOptions = {},
@@ -42,8 +34,7 @@ export function createAuthedFetch(
   return (async (input: RequestInfo | URL, init?: RequestInit) => {
     if (!shouldSign(urlOf(input), origins)) return base(input, init);
 
-    // Cloned up front: building the signed request consumes the original's
-    // body, so the retry below needs its own copy.
+    // Signing consumes a Request's body, so the retry needs its own copy.
     const replay = isRequest(input) ? input.clone() : null;
 
     const token = await tokenOrNull(session);
@@ -56,8 +47,7 @@ export function createAuthedFetch(
     try {
       fresh = (await session.refresh()).accessToken;
     } catch {
-      // The session is gone (AuthSession already emitted `session_expired`).
-      // Hand back the real 401 instead of masking it with a refresh error.
+      // Masking the API's 401 with the refresh error hides why it failed.
       return first;
     }
     const [retryInput, retryInit] = sign(replay ?? input, init, fresh);
@@ -65,9 +55,8 @@ export function createAuthedFetch(
   }) as FetchLike;
 }
 
-/** The current token, or `null` when there is no usable session. A 401 here
- *  means "not signed in", which is a normal state — anything else (network,
- *  5xx during refresh) is a real failure and propagates. */
+/** Token, or `null` when signed out. A 401 means "not signed in" (normal);
+ *  anything else is a real failure and propagates. */
 async function tokenOrNull(session: FetchSession): Promise<string | null> {
   try {
     return await session.getAccessToken();
@@ -98,8 +87,7 @@ function shouldSign(url: string, origins: string[] | undefined): boolean {
   try {
     return origins.includes(new URL(url).origin);
   } catch {
-    // A relative URL is same-origin by definition, so an allowlist that
-    // names the current origin should cover it.
+    // Relative URLs are same-origin by definition.
     return typeof location !== "undefined" && origins.includes(location.origin);
   }
 }

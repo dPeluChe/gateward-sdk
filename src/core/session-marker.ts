@@ -13,17 +13,10 @@ export interface SessionMarkerOptions {
   path?: string;
 }
 
-/** Wrap a {@link TokenStorage} so it also maintains a **non-secret marker
- *  cookie** next to the tokens.
+/** Wrap a {@link TokenStorage} so it also maintains the marker cookie.
  *
- *  Tokens live in Web Storage, which a server never sees, so an SSR framework
- *  cannot tell a signed-in request from a signed-out one and every protected
- *  route renders a redirecting shell. This cookie closes that gap: it carries
- *  no credential, only the fact that a session is believed to exist.
- *
- *  **It is not authentication.** A user can set it by hand; all that buys
- *  them is a server-rendered layout, because every API call still needs a
- *  real token and answers 401 without one. Never authorize on it. */
+ *  NOT authentication — it is forgeable and carries no credential; forging it
+ *  yields an empty shell. See docs/ARCHITECTURE/SESSION.md. */
 export function withSessionMarker(
   storage: TokenStorage,
   opts: SessionMarkerOptions = {},
@@ -32,7 +25,7 @@ export function withSessionMarker(
   const maxAge = opts.maxAgeSec ?? 60 * 60 * 24 * 30;
   const path = opts.path ?? "/";
 
-  return {
+  const wrapped: TokenStorage = {
     get: () => storage.get(),
     async set(tokens: TokenSet) {
       await storage.set(tokens);
@@ -43,10 +36,14 @@ export function withSessionMarker(
       clearMarker(name, path);
     },
   };
+  // Forwarded, or wrapping would silently disable cross-tab sync.
+  if (storage.subscribe) {
+    wrapped.subscribe = (listener) => storage.subscribe!(listener);
+  }
+  return wrapped;
 }
 
-/** Read the marker from a `Cookie` header — the one form available in every
- *  runtime (Next middleware, a Remix loader, a plain Request). */
+/** Read the marker from a `Cookie` header. */
 export function hasSessionMarker(
   cookieHeader: string | null | undefined,
   name: string = SESSION_MARKER_COOKIE,
@@ -67,8 +64,7 @@ function clearMarker(name: string, path: string): void {
   document.cookie = `${name}=; Path=${path}; Max-Age=0; SameSite=Lax${secureFlag()}`;
 }
 
-/** `Secure` would make the cookie unwritable over plain http, which is how
- *  every local dev server runs. */
+/** Omitted on http, or the cookie would be unwritable in local dev. */
 function secureFlag(): string {
   return typeof location !== "undefined" && location.protocol === "https:"
     ? "; Secure"
