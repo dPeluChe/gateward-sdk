@@ -1,7 +1,7 @@
 {
   "name": "@gateward/sdk",
   "version": "0.1.0",
-  "description": "Client/integrator SDK for Gateward \u2014 end-user auth (browser) + backend token verification & events. Admin/control-plane lives in the dashboard.",
+  "description": "Client/integrator SDK for Gateward — end-user auth (browser) + backend token verification & events. Admin/control-plane lives in the dashboard.",
   "type": "module",
   "license": "MIT",
   "repository": {
@@ -81,7 +81,7 @@
     "@types/node": "^26.1.1",
     "@types/react": "^19.2.18",
     "@types/react-dom": "^19.2.4",
-    "jsdom": "^30.0.1",
+    "jsdom": "^26.1.0",
     "openapi-typescript": "^7.4.4",
     "react": "^19.2.8",
     "react-dom": "^19.2.8",
