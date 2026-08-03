@@ -14,8 +14,8 @@ cubierto es admin/control-plane, que por diseño vive en el dashboard.
 
 `main`: PRs #9-#16, 108 tests, 4 entries (`index`, `server`, `react`, `next`).
 
-Próximo paso: **publicar** y que el dev de tennispro lo aplique. Su feedback
-manda sobre el resto del backlog.
+Próximo paso: **publicar** y que la app piloto lo aplique. Su feedback manda
+sobre el resto del backlog.
 
 ---
 
@@ -32,14 +32,14 @@ manda sobre el resto del backlog.
 - [ ] `gateward-sdk-demo` está atrás de la superficie actual: no ejercita
   `updateProfile`, `changePassword`, `revokeAllSessions`, `listMembers` /
   `setMemberRole`, ni el auto-login del register.
-- [ ] Es la referencia de integración que va a leer el dev de tennispro, así que
-  vale más que la doc escrita.
+- [ ] Es la referencia de integración que se lee antes que la doc escrita, así
+  que vale más que ella.
 
-### PILOT-TENNISPRO: Primera integración real `added: 2026-08-03`
-- [ ] La aplica el dev de tennispro; nosotros respondemos su feedback.
-- [ ] Análisis previo en `GUIDES/MIGRATION.md` (Patrón A). Riesgo principal: las
-  queries/mutations de Convex no pueden hacer `fetch`, así que no verifican un
-  JWT por sí solas — depende de OIDC-001 del Core (ver abajo).
+### PILOT-001: Primera integración real `added: 2026-08-03`
+- [ ] La aplica el equipo de la app piloto; nosotros respondemos su feedback.
+- [ ] Análisis previo en `GUIDES/MIGRATION.md`. Si la piloto corre sobre Convex,
+  el riesgo principal es que sus queries/mutations no pueden hacer `fetch`, así
+  que no verifican un JWT por sí solas — depende de OIDC-001 (ver abajo).
 
 ---
 
@@ -47,9 +47,10 @@ manda sobre el resto del backlog.
 
 ### PY-001: SDK de Python `added: 2026-08-03`
 - [ ] Verificación de token (JWKS + ES256) y cliente de eventos para backends
-  Python: skysset (Django/DRF), feedby (FastAPI), henri (Django).
-- [ ] **Diferido a propósito**: ninguno de los tres está migrando todavía, y
-  tennispro es TypeScript. Se retoma cuando la primera integración esté cerrada.
+  Python (Django/DRF, FastAPI).
+- [ ] **Diferido a propósito**: ninguno de sus consumidores está migrando
+  todavía, y la app piloto es TypeScript. Se retoma cuando la primera
+  integración esté cerrada.
 - [ ] Alcance estimado: `verify_token` + `send_event`, ~150 LOC. No necesita
   paridad con el SDK de TS — un backend Python no hace login de usuario.
 
@@ -66,11 +67,11 @@ Reportado al equipo del Core; el SDK no puede avanzar sin esto.
 
 | Pedido | Qué desbloquea |
 |---|---|
-| **OIDC-001** — `/.well-known/openid-configuration` | Convex valida JWTs de un proveedor OIDC de forma nativa dentro de queries. Sin esto, cada app Convex necesita tabla espejo y action de intercambio. **5 de los 7 candidatos son Convex** |
+| **OIDC-001** — `/.well-known/openid-configuration` | Convex valida JWTs de un proveedor OIDC de forma nativa dentro de queries. Sin esto, cada app Convex necesita tabla espejo y action de intercambio |
 | **HASH-IMPORT-001** — importar hash legacy, re-hash al primer login | Migrar usuarios existentes sin reset masivo ni login dual |
 | **SELF-DELETE-001** — borrar la propia cuenta | Requisito de GDPR y App Store. No existe en el contrato |
-| `register` con perfil en el alta | tennispro, feedby, ligamx piden nombre en el mismo paso |
-| **EMAIL-CHANGE-001** | tennispro |
+| `register` con perfil en el alta | apps que piden nombre o alias en el mismo paso |
+| **EMAIL-CHANGE-001** | apps con edición de email en el perfil |
 
 ---
 
@@ -80,9 +81,9 @@ Reportado al equipo del Core; el SDK no puede avanzar sin esto.
 - [ ] ROLE-001 del Core ya permite asignar `app_admin`, y el SDK expone
   `listMembers`/`setMemberRole`. Falta decidir si el SDK opina sobre permisos
   (matriz rol → permiso) o eso se queda en cada app.
-- [ ] newbase y henri tienen matrices RBAC casi idénticas — señal de que hay algo
-  común, pero también de que cada una la quiere suya. Decidir con datos del
-  primer piloto, no antes.
+- [ ] Varias apps auditadas tenían matrices RBAC casi idénticas — señal de que
+  hay algo común, pero también de que cada una la quiere suya. Decidir con datos
+  del primer piloto, no antes.
 
 ### STORAGE-001: Alternativa a localStorage `added: 2026-08-03`
 - [ ] `createWebStorage()` deja los tokens expuestos a XSS. Documentado, pero no

@@ -1,8 +1,7 @@
 # Migrar una app a Gateward
 
-Guía por **patrón de auth**, no por proyecto: la mayoría de las apps del
-workspace caen en uno de cinco. Cada sección dice qué se tira, qué se queda, y
-el diff mínimo.
+Guía por **patrón de auth**: la mayoría de las apps caen en uno de cinco. Cada
+sección dice qué se tira, qué se queda, y el diff mínimo.
 
 Referencia de uso en el [README](../../README.md); el porqué de cada primitiva
 en [ARCHITECTURE/SESSION.md](../ARCHITECTURE/SESSION.md).
@@ -48,32 +47,30 @@ y se escribe con `updateProfile()`.
 
 ## Patrón A — Singleton + subscribe (Convex)
 
-**Ejemplo: `labs-tennispro` (`src/lib/auth.ts`).** Un `AuthService` singleton
-con `subscribe()`, `AuthProvider` y `useAuth` propios; el token de sesión es
-opaco y sale de una action de Convex.
+**Ejemplo típico:** una SPA de Vite + React sobre Convex, con un `AuthService`
+singleton que expone `subscribe()`, más un `AuthProvider` y un `useAuth`
+propios. El token de sesión es opaco y lo emite una action de Convex.
 
 Es el más fácil: la forma ya es idéntica a la del SDK.
 
-- `AuthService.login/logout/registerUser` → métodos de `GatewardAuth`.
+- `login` / `logout` / `registerUser` del singleton → métodos de `GatewardAuth`.
 - `subscribe(listener)` → `onAuthStateChange()`. Ojo: el SDK distingue
   `signed_out` de `session_expired`; el singleton no lo hacía y por eso la UI
   podía quedar mostrando una sesión muerta.
 - `AuthProvider` + `useAuth` propios → los de `@gateward/sdk/react`. El
   `status: 'loading' | 'authenticated' | 'unauthenticated'` ya existe.
 - `hydrateSession()` / `ready()` → lo hace el provider al montar.
-- Los 4 roles (`admin`, `tournament-organizer`, `player`, `venue-manager`) van
-  a `metadata.role`. `getHomePathForUser()` se queda en tu código, leyendo de
-  ahí.
+- Los roles propios de la app van a `metadata.role`. La función que decide a
+  qué pantalla cae cada rol se queda en tu código, leyendo de ahí.
 
-Convex sigue siendo tu base de datos: se le saca **solo** la tabla `users` y
-`convex/nextauth.ts`. Las actions que hoy reciben `sessionToken` pasan a
-verificar el JWT de Gateward en tu backend.
+Convex sigue siendo tu base de datos: se le saca **solo** la tabla de usuarios y
+el módulo de credenciales. Las funciones que hoy reciben un `sessionToken` pasan
+a verificar el JWT de Gateward.
 
 ## Patrón B — NextAuth v4 + Convex
 
-**Ejemplo: `workspace-blueprints/labs-newbase`, `dpeluche.dev`
-(`src/lib/auth.ts`).** `CredentialsProvider` que llama a Convex, sesión JWT de
-NextAuth, rol en el callback `session`.
+**Ejemplo típico:** una app Next.js con `CredentialsProvider` contra Convex,
+sesión JWT de NextAuth y el rol inyectado en el callback `session`.
 
 - Se va `next-auth` entero: provider, callbacks, `/api/auth/[...nextauth]`,
   `types/next-auth.d.ts`.
@@ -84,48 +81,47 @@ NextAuth, rol en el callback `session`.
 - `session.user.role` → `user.metadata.role` (el de tu app) o
   `user.membership_role` (el de Gateward).
 - El `middleware.ts` pasa a `createGatewardMiddleware` — ver Patrón E.
-- La matriz RBAC (`src/lib/rbac.ts`) **se queda como está**. Sigue siendo tuya;
-  solo cambia de dónde sale el rol que le pasás.
+- Tu matriz RBAC **se queda como está**. Sigue siendo tuya; solo cambia de
+  dónde sale el rol que le pasás.
 
-⚠ El bootstrap "primer usuario = admin" (`hasAnyUsers` en dpeluche.dev) no es
-automático: el primer `app_admin` lo promueve un platform admin, porque dentro
-de la app todavía no hay nadie con `app:user_manage`.
+⚠ El bootstrap "primer usuario = admin" no es automático: el primer `app_admin`
+lo promueve un platform admin, porque dentro de la app todavía no hay nadie con
+`app:user_manage`.
 
 ## Patrón C — Store + interceptor (zustand/axios)
 
-**Ejemplo: `labs-newfeedby` (`src/stores/authStore.ts`, `src/lib/tokenStorage.ts`).**
-Store persistido con user + tokens, mirror a localStorage para que el
-interceptor de axios los lea.
+**Ejemplo típico:** un store de zustand persistido con user + tokens, con
+mirror a localStorage para que el interceptor de axios los lea.
 
 - El store deja de guardar tokens: eso es del SDK. Guarda solo estado de UI.
-- `tokenStorage` → `createWebStorage()`. Tus claves versionadas (`:v1`) fueron
-  buena idea; el SDK usa una sola clave, así que si necesitás forzar un
-  sign-out global, cambiá el nombre de la clave.
+- Tu módulo de storage → `createWebStorage()`. Si versionabas las claves
+  (`:v1`) era buena idea; el SDK usa una sola, así que para forzar un sign-out
+  global cambiá su nombre.
 - El interceptor de axios → `auth.createFetch()`, o dejá axios y usá
   `auth.getAccessToken()` en el interceptor.
-- `register()` de feedby devolvía tokens (auto-login). **Eso ya se puede**:
+- Si tu `register()` devolvía tokens (auto-login), **eso se puede**:
   aprovisioná la app con `require_email_verification: false` y `register()`
   persiste los tokens y emite `signed_in`. Con la verificación activa, el flujo
   es registro → "revisá tu correo" → login.
 
 ## Patrón D — JWT propio + localStorage
 
-**Ejemplo: `workspace-henri/henri-dashboard` (`src/lib/api/`).** Es el que más
-se parece a Gateward: access+refresh en localStorage, refresh single-flight,
-cookie marcadora, bus de forced-logout.
+**Ejemplo típico:** un dashboard Next con access+refresh en localStorage,
+refresh single-flight, cookie marcadora y un bus de forced-logout. Es el patrón
+que más se parece a Gateward.
 
 Casi todo se borra porque el SDK ya lo trae:
 
-| Archivo de henri | Reemplazo |
+| Lo que tenías | Reemplazo |
 |---|---|
-| `tokenStore.ts` | `withSessionMarker(createWebStorage())` |
-| `authEvents.ts` | `onAuthStateChange()` |
-| `client.ts` (middleware de refresh) | `auth.createFetch()` |
-| `AuthProvider.tsx` | `<GatewardProvider>` |
-| cookie `henri.authed` | `SESSION_MARKER_COOKIE` |
+| módulo de token store | `withSessionMarker(createWebStorage())` |
+| bus de eventos de auth | `onAuthStateChange()` |
+| middleware de refresh del cliente HTTP | `auth.createFetch()` |
+| tu `AuthProvider` | `<GatewardProvider>` |
+| tu cookie marcadora | `SESSION_MARKER_COOKIE` |
 
-`whoami()` → `getUser()`. El chequeo `user_type !== 'admin'` pasa a
-`membership_role`/`metadata`.
+Tu `whoami()` → `getUser()`. Un chequeo tipo `user_type !== 'admin'` pasa a
+`membership_role` o a `metadata`.
 
 ## Patrón E — Gating SSR en Next
 
@@ -165,10 +161,9 @@ const claims = await gw.verifyToken(bearerToken, APP_ID);
 // claims.sub = user id, claims.scopes = permisos
 ```
 
-**Si tu backend es Python** (skysset con Django/DRF, feedby con FastAPI, henri
-con Django) todavía no hay SDK. Opciones: verificar a mano con `PyJWT` +
-`PyJWKClient` contra `/.well-known/jwks.json` (ES256), o esperar al SDK de
-Python.
+**Si tu backend es Python** (Django/DRF, FastAPI) todavía no hay SDK.
+Opciones: verificar a mano con `PyJWT` + `PyJWKClient` contra
+`/.well-known/jwks.json` (ES256), o esperar al SDK de Python.
 
 ## Checklist
 
@@ -204,12 +199,12 @@ Cosas que hoy **no** se pueden migrar tal cual:
 
 | Bloqueador | A quién afecta |
 |---|---|
-| `register` no acepta perfil (nombre) en el alta | tennispro, feedby, ligamx |
-| Sin cambio de email (EMAIL-CHANGE-001) | tennispro |
-| Sin SDK de Python | skysset, feedby, henri (backends) |
+| `register` no acepta perfil (nombre) en el alta | apps que piden nombre o alias al registrarse |
+| Sin cambio de email | apps con edición de email en el perfil |
+| Sin SDK de Python | backends Django/DRF y FastAPI |
 
-Resueltos: APP-POLICY-001 (política de password por app — el PIN de 4 dígitos
-de ligamx/mundialito ya entra — y auto-login en el alta) y ROLE-001
-(`app_admin` ya es asignable; ver "Roles de app" en el README).
+Ya resueltos: política de password configurable por app (una app puede exigir,
+por ejemplo, un PIN numérico corto en vez del mínimo por defecto), auto-login en
+el alta, y asignación de `app_admin` (ver "Roles de app" en el README).
 
 Están reportados al equipo del Core.
