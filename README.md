@@ -24,6 +24,11 @@ OpenAPI** (`GET /api-docs/openapi.json`), no a mano.
 pnpm add @gateward/sdk
 ```
 
+MIT. Publicación y política SemVer en
+[`docs/GUIDES/RELEASING.md`](./docs/GUIDES/RELEASING.md); cambios en
+[`CHANGELOG.md`](./CHANGELOG.md); backlog en
+[`docs/TASK_TODO.md`](./docs/TASK_TODO.md).
+
 ## Auth de usuario (browser/backend)
 
 ```ts
