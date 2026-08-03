@@ -9,6 +9,8 @@ OpenAPI** (`GET /api-docs/openapi.json`), no a mano.
 - `@gateward/sdk/server` — server-to-server con API key (`X-API-Key`): `sendEvent`,
   `listEvents`, `getUserMetadata`/`updateUserMetadata`, y `verifyToken`.
 - `@gateward/sdk/react` — `<GatewardProvider>` + `useAuth()` / `useUser()`.
+- `@gateward/sdk/next` — gating SSR por cookie marcadora (Next middleware, Remix,
+  SvelteKit: solo usa Request/Response estándar).
 
 > **Alcance:** este SDK cubre la superficie de **cliente/integrador** solamente. Las
 > operaciones de **admin/control-plane** (gestión de ecosystems, usuarios, api keys, ver
@@ -103,6 +105,37 @@ sigue pintando una sesión que no existe.
 
 Un listener que tira error queda aislado: no rompe el pipeline de tokens.
 
+Con `createWebStorage()` los eventos también llegan **desde otras pestañas**:
+si el usuario cierra sesión en una, las demás se enteran. Se apaga con
+`syncTabs: false`.
+
+### Llamar a tu propia API
+
+`createFetch()` devuelve un `fetch` firmado con la sesión: adjunta el Bearer,
+refresca si el token está por expirar, y reintenta **una** vez tras un 401.
+Va a cualquier cliente que acepte un `fetch` (openapi-fetch, ky, un adapter de
+axios) — es el interceptor que hoy escribe a mano cada proyecto.
+
+```ts
+import createClient from "openapi-fetch";
+
+const api = createClient<paths>({
+  baseUrl: "https://api.myapp.com",
+  fetch: auth.createFetch({ origins: ["https://api.myapp.com"] }),
+});
+```
+
+- **Sin sesión no es error**: el request sale sin firmar, así los endpoints
+  públicos siguen andando y tu API responde su propio 401.
+- Si el refresh falla, devuelve el **401 original** — enmascararlo con el error
+  del refresh esconde por qué falló la llamada de verdad.
+- `retryOn401: false` desactiva el reintento.
+
+> `origins` acota a qué hosts se manda el token. Sin la lista se firma **todo**
+> lo que pase por ese `fetch`: perfecto si se lo das a un solo cliente de API,
+> peligroso como reemplazo global de `fetch` — le estarías mandando tu access
+> token a terceros.
+
 Manda automáticamente un **`X-Gateward-Device-Id`** estable (generado y persistido
 en `localStorage` en el browser) para que el Core reconozca el mismo dispositivo entre
 sesiones, y un **`X-Gateward-Timezone`** (IANA, detectado vía `Intl`). Controlables con
@@ -159,6 +192,52 @@ hard redirect para que el middleware reevalúe.
 
 `register()` no cambia el estado de sesión: el Core no emite tokens hasta que
 el email está verificado.
+## SSR / Next.js
+
+Los tokens viven en Web Storage, que el server **nunca ve**. Sin ayuda, un
+framework SSR no distingue un request logueado de uno que no, y toda ruta
+protegida renderiza una shell que redirige desde el cliente.
+
+La solución es una **cookie marcadora no secreta**: no lleva credencial, solo
+el hecho de que existe una sesión.
+
+```ts
+// donde creás el cliente
+const auth = new GatewardAuth({
+  baseUrl, appId,
+  storage: withSessionMarker(createWebStorage()),
+});
+```
+
+```ts
+// middleware.ts
+import { createGatewardMiddleware } from "@gateward/sdk/next";
+
+const gate = createGatewardMiddleware({
+  protect: ["/dashboard", "/settings"],
+  authenticatedHome: "/dashboard",
+});
+
+export function middleware(request: NextRequest) {
+  return gate(request) ?? NextResponse.next();
+}
+```
+
+Devuelve `undefined` cuando el request debe seguir. `protect` acepta una lista
+de prefijos (por segmento: `/dashboard` **no** matchea `/dashboard-public`) o
+un predicado propio. Un visitante deslogueado en ruta protegida va a
+`loginPath` con `?next=<ruta original>`; uno logueado que abre el login va a
+`authenticatedHome`.
+
+> ⚠ **Esto no es autenticación.** Es una optimización de render: decide si el
+> server se molesta en pintar el layout autenticado. La cookie es falsificable
+> y no contiene credencial, así que falsificarla solo consigue una shell vacía
+> — toda llamada a datos sigue necesitando un token real y responde 401 sin él.
+> Autorizá en tu API, nunca acá.
+
+`@gateward/sdk/next` no importa nada de `next`: habla solo `Request`/`Response`
+estándar, así que el mismo helper sirve en un loader de Remix, en hooks de
+SvelteKit o en Hono. Para casos a mano está `hasSessionMarker(cookieHeader)`.
 
 ## Server-to-server (API key)
 
@@ -239,6 +318,12 @@ new GatewardAuth({ baseUrl, appId, retry: { maxRetries: 3, baseDelayMs: 200 } })
 
 `GatewardAuth` también expone: `forgotPassword(email)`, `resetPassword(token, newPassword)`,
 `verifyEmail(token)`, `resendVerificationEmail(email)`.
+
+## Decisiones de diseño
+
+El *por qué* detrás del ciclo de sesión (eventos, cache de `getUser`, alcance
+del token en `createFetch`, cookie marcadora, sync entre pestañas) está en
+[`docs/ARCHITECTURE/SESSION.md`](./docs/ARCHITECTURE/SESSION.md).
 
 ## Regenerar tipos desde el contrato
 

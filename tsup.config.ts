@@ -5,6 +5,7 @@ export default defineConfig({
     index: "src/index.ts",
     server: "src/server.ts",
     react: "src/react.ts",
+    next: "src/next.ts",
   },
   format: ["esm", "cjs"],
   external: ["react"],

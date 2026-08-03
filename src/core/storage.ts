@@ -6,11 +6,20 @@ export interface TokenSet {
   expiresAt: number;
 }
 
+/** Notified when the stored pair changes outside this client (another tab). */
+export type StorageChangeListener = (
+  tokens: TokenSet | null,
+  previous: TokenSet | null,
+) => void;
+
 /** Pluggable persistence for the auth token pair. Sync or async. */
 export interface TokenStorage {
   get(): TokenSet | null | Promise<TokenSet | null>;
   set(tokens: TokenSet): void | Promise<void>;
   clear(): void | Promise<void>;
+  /** Optional cross-tab notification; returns an unsubscribe.
+   *  See docs/ARCHITECTURE/SESSION.md. */
+  subscribe?(listener: StorageChangeListener): () => void;
 }
 
 /** Default in-memory storage — fine for servers and tests; a browser app
@@ -47,5 +56,24 @@ export function createWebStorage(
     clear(): void {
       store.removeItem(key);
     },
+    subscribe(listener: StorageChangeListener): () => void {
+      if (typeof window === "undefined") return () => {};
+      // `storage` fires only in the OTHER tabs, so no self-echo to guard.
+      const onStorage = (e: StorageEvent) => {
+        if (e.key !== key || (e.storageArea && e.storageArea !== store)) return;
+        listener(parseTokens(e.newValue), parseTokens(e.oldValue));
+      };
+      window.addEventListener("storage", onStorage);
+      return () => window.removeEventListener("storage", onStorage);
+    },
   };
+}
+
+function parseTokens(raw: string | null): TokenSet | null {
+  if (!raw) return null;
+  try {
+    return JSON.parse(raw) as TokenSet;
+  } catch {
+    return null;
+  }
 }

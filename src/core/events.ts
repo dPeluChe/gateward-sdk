@@ -1,14 +1,7 @@
 import type { TokenSet } from "./storage.js";
 
-/** What happened to the session.
- *
- *  `session_expired` is deliberately distinct from `signed_out`: the first is
- *  the server dropping the session under the app's feet (dead/rotated refresh
- *  token), the second is the user asking to leave. Apps react differently —
- *  a forced logout usually means "redirect to /login now", an explicit one
- *  means "go home". Without the distinction the SDK clears storage silently
- *  and the UI keeps rendering an authenticated shell for a session that no
- *  longer exists. */
+/** `session_expired` (server dropped it) is distinct from `signed_out` (user
+ *  left) because apps react differently. See docs/ARCHITECTURE/SESSION.md. */
 export type AuthEvent =
   | "signed_in"
   | "token_refreshed"
@@ -23,8 +16,7 @@ export interface AuthStateChange {
 
 export type AuthStateListener = (change: AuthStateChange) => void;
 
-/** Fan-out for auth state transitions. A listener that throws is isolated —
- *  one bad subscriber must not break the token pipeline that emitted. */
+/** Fan-out for auth state transitions. */
 export class AuthStateEmitter {
   private readonly listeners = new Set<AuthStateListener>();
 
@@ -40,7 +32,7 @@ export class AuthStateEmitter {
       try {
         listener(change);
       } catch {
-        /* a subscriber's error must never affect the session */
+        // A subscriber's error must never break the token pipeline.
       }
     }
   }

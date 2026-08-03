@@ -10,13 +10,24 @@ export type {
   AuthStateChange,
   AuthStateListener,
 } from "./core/events.js";
+export {
+  createAuthedFetch,
+  type AuthedFetchOptions,
+} from "./core/authed-fetch.js";
 export { GatewardError } from "./core/errors.js";
 export {
   MemoryStorage,
   createWebStorage,
   type TokenStorage,
   type TokenSet,
+  type StorageChangeListener,
 } from "./core/storage.js";
+export {
+  SESSION_MARKER_COOKIE,
+  hasSessionMarker,
+  withSessionMarker,
+  type SessionMarkerOptions,
+} from "./core/session-marker.js";
 export {
   HttpClient,
   type RequestHooks,
