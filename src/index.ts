@@ -22,6 +22,12 @@ export {
   type TokenSet,
 } from "./core/storage.js";
 export {
+  SESSION_MARKER_COOKIE,
+  hasSessionMarker,
+  withSessionMarker,
+  type SessionMarkerOptions,
+} from "./core/session-marker.js";
+export {
   HttpClient,
   type RequestHooks,
   type RetryOptions,

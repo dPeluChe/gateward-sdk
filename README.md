@@ -8,6 +8,8 @@ OpenAPI** (`GET /api-docs/openapi.json`), no a mano.
   propias, y verificación local de JWT (ES256 vía JWKS).
 - `@gateward/sdk/server` — server-to-server con API key (`X-API-Key`): `sendEvent`,
   `listEvents`, `getUserMetadata`/`updateUserMetadata`, y `verifyToken`.
+- `@gateward/sdk/next` — gating SSR por cookie marcadora (Next middleware, Remix,
+  SvelteKit: solo usa Request/Response estándar).
 
 > **Alcance:** este SDK cubre la superficie de **cliente/integrador** solamente. Las
 > operaciones de **admin/control-plane** (gestión de ecosystems, usuarios, api keys, ver
@@ -134,6 +136,53 @@ en `localStorage` en el browser) para que el Core reconozca el mismo dispositivo
 sesiones, y un **`X-Gateward-Timezone`** (IANA, detectado vía `Intl`). Controlables con
 `deviceId` / `timezone` (o `false` para desactivar). El Core, además, captura IP real
 (behind proxy) + navegador/OS del User-Agent en cada login/refresh.
+
+## SSR / Next.js
+
+Los tokens viven en Web Storage, que el server **nunca ve**. Sin ayuda, un
+framework SSR no distingue un request logueado de uno que no, y toda ruta
+protegida renderiza una shell que redirige desde el cliente.
+
+La solución es una **cookie marcadora no secreta**: no lleva credencial, solo
+el hecho de que existe una sesión.
+
+```ts
+// donde creás el cliente
+const auth = new GatewardAuth({
+  baseUrl, appId,
+  storage: withSessionMarker(createWebStorage()),
+});
+```
+
+```ts
+// middleware.ts
+import { createGatewardMiddleware } from "@gateward/sdk/next";
+
+const gate = createGatewardMiddleware({
+  protect: ["/dashboard", "/settings"],
+  authenticatedHome: "/dashboard",
+});
+
+export function middleware(request: NextRequest) {
+  return gate(request) ?? NextResponse.next();
+}
+```
+
+Devuelve `undefined` cuando el request debe seguir. `protect` acepta una lista
+de prefijos (por segmento: `/dashboard` **no** matchea `/dashboard-public`) o
+un predicado propio. Un visitante deslogueado en ruta protegida va a
+`loginPath` con `?next=<ruta original>`; uno logueado que abre el login va a
+`authenticatedHome`.
+
+> ⚠ **Esto no es autenticación.** Es una optimización de render: decide si el
+> server se molesta en pintar el layout autenticado. La cookie es falsificable
+> y no contiene credencial, así que falsificarla solo consigue una shell vacía
+> — toda llamada a datos sigue necesitando un token real y responde 401 sin él.
+> Autorizá en tu API, nunca acá.
+
+`@gateward/sdk/next` no importa nada de `next`: habla solo `Request`/`Response`
+estándar, así que el mismo helper sirve en un loader de Remix, en hooks de
+SvelteKit o en Hono. Para casos a mano está `hasSessionMarker(cookieHeader)`.
 
 ## Server-to-server (API key)
 
