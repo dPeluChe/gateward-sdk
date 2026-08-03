@@ -1,10 +1,28 @@
 {
   "name": "@gateward/sdk",
   "version": "0.1.0",
-  "description": "Client/integrator SDK for Gateward — end-user auth (browser) + backend token verification & events. Admin/control-plane lives in the dashboard.",
+  "description": "Client/integrator SDK for Gateward \u2014 end-user auth (browser) + backend token verification & events. Admin/control-plane lives in the dashboard.",
   "type": "module",
-  "license": "UNLICENSED",
-  "private": true,
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/dPeluChe/gateward-sdk.git"
+  },
+  "homepage": "https://github.com/dPeluChe/gateward-sdk#readme",
+  "bugs": {
+    "url": "https://github.com/dPeluChe/gateward-sdk/issues"
+  },
+  "keywords": [
+    "gateward",
+    "auth",
+    "authentication",
+    "identity",
+    "jwt",
+    "oauth",
+    "sdk",
+    "react",
+    "nextjs"
+  ],
   "sideEffects": false,
   "exports": {
     ".": {
@@ -33,7 +51,9 @@
   "types": "./dist/index.d.ts",
   "files": [
     "dist",
-    "README.md"
+    "README.md",
+    "LICENSE",
+    "CHANGELOG.md"
   ],
   "scripts": {
     "build": "tsup",
@@ -42,7 +62,8 @@
     "test": "vitest run",
     "test:watch": "vitest",
     "gen:types": "openapi-typescript ./openapi.json -o ./src/generated/api.ts",
-    "gen:contract": "cargo run --manifest-path ../gateward-core/Cargo.toml --bin dump_openapi > ./openapi.json && pnpm gen:types"
+    "gen:contract": "cargo run --manifest-path ../gateward-core/Cargo.toml --bin dump_openapi > ./openapi.json && pnpm gen:types",
+    "prepublishOnly": "pnpm typecheck && pnpm test && pnpm build"
   },
   "dependencies": {
     "jose": "^5.9.6"
@@ -70,6 +91,10 @@
   },
   "engines": {
     "node": ">=18"
+  },
+  "publishConfig": {
+    "access": "public",
+    "provenance": true
   },
   "pnpm": {
     "onlyBuiltDependencies": [
