@@ -351,6 +351,37 @@ new GatewardAuth({ baseUrl, appId, retry: { maxRetries: 3, baseDelayMs: 200 } })
 - **Error de red / 502·503·504** → reintenta **solo** en métodos idempotentes (GET/HEAD/OPTIONS/DELETE/PUT). **Nunca** POST/PATCH — podrían re-ejecutarse (ej. un `sendEvent` duplicado).
 - Backoff exponencial con jitter, cortable por `AbortSignal`. Desactivado por default.
 
+## Ambientes y config de la app
+
+`getAppConfig()` lee `GET /v1/apps/current` — público, resuelto por el
+`X-Gateward-App-Id`, cacheado. Trae `environment`, `identity_mode`,
+`require_email_verification` y `password_policy`.
+
+**No hay un "modo test" en el SDK**, y es a propósito: un flag que no cambia el
+comportamiento del server daría falsa sensación de aislamiento. El aislamiento
+real es de datos — un identity pool propio y un app con `environment: "test"`,
+en el mismo Core.
+
+Lo que el SDK sí hace es **negarse a arrancar contra el ambiente equivocado**:
+
+```ts
+const auth = new GatewardAuth({ baseUrl, appId, expectEnvironment: "test" });
+await auth.ready(); // tira EnvironmentMismatchError si el app es production
+```
+
+Con `expectEnvironment` puesto, `login()` y `register()` verifican antes de
+crear nada — un build de QA apuntado a producción falla **antes** del primer
+usuario real, no después. Sin la opción, el SDK no pide la config y no cuesta
+un request extra.
+
+`validatePassword(pw)` compara contra la política real de esa app y devuelve
+las reglas que fallan, sin round-trip. Es pre-chequeo de UX: el Core aplica las
+mismas reglas y manda.
+
+> Si el browser corre en un origin que no está en la allowlist del app, este
+> endpoint responde **403** como el resto. En desarrollo, registrá el puerto
+> local o vas a ver un 403 que parece un bug del SDK.
+
 ## Política de password y alta
 
 Cada app define su propia política (`password_policy` en el `AppResponse`), así

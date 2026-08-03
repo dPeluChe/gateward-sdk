@@ -6,6 +6,11 @@ import {
 import { resolveDeviceId } from "../core/device.js";
 import { resolveTimezone } from "../core/timezone.js";
 import {
+  assertEnvironment,
+  checkPassword,
+  type AppEnvironment,
+} from "../core/app-config.js";
+import {
   getMember,
   listMembers,
   setMemberRole,
@@ -15,6 +20,7 @@ import {
 import { AuthSession, type SessionOptions } from "../core/session.js";
 import type { TokenSet } from "../core/storage.js";
 import type {
+  AppConfig,
   FetchLike,
   ForgotPasswordResponse,
   MembershipResponse,
@@ -42,6 +48,10 @@ export interface GatewardAuthOptions extends SessionOptions {
   retry?: RetryOptions | boolean;
   /** Custom fetch (defaults to global `fetch`). */
   fetch?: FetchLike;
+  /** Refuse to register or log in unless the app runs in one of these
+   *  environments. Catches a test build pointed at production before it
+   *  creates real users. Call {@link GatewardAuth.ready} to check at boot. */
+  expectEnvironment?: AppEnvironment | AppEnvironment[];
 }
 
 /** Browser/user-facing auth client: register, login, automatic refresh,
@@ -49,6 +59,12 @@ export interface GatewardAuthOptions extends SessionOptions {
  *  `X-Gateward-App-Id`. Token lifecycle comes from {@link AuthSession}. */
 export class GatewardAuth extends AuthSession {
   private readonly appId: string;
+  private readonly expectEnvironment:
+    | AppEnvironment
+    | AppEnvironment[]
+    | undefined;
+  private appConfig: AppConfig | null = null;
+  private appConfigInFlight: Promise<AppConfig> | null = null;
 
   constructor(opts: GatewardAuthOptions) {
     const deviceId =
@@ -68,6 +84,52 @@ export class GatewardAuth extends AuthSession {
       opts,
     );
     this.appId = opts.appId;
+    this.expectEnvironment = opts.expectEnvironment;
+  }
+
+  /** The app's public config (`GET /v1/apps/current`): environment, whether
+   *  register gates on email, and the password policy. Cached; the Core also
+   *  caches it for 60s.
+   *
+   *  Served through the same Origin allowlist as everything else — a browser
+   *  on an unregistered origin gets 403, not a config. */
+  async getAppConfig(opts: { force?: boolean } = {}): Promise<AppConfig> {
+    if (!opts.force && this.appConfig) return this.appConfig;
+    if (!opts.force && this.appConfigInFlight) return this.appConfigInFlight;
+
+    this.appConfigInFlight = this.http
+      .request<AppConfig>("GET", "/v1/apps/current")
+      .then((config) => {
+        if (this.expectEnvironment) {
+          assertEnvironment(config, this.expectEnvironment);
+        }
+        this.appConfig = config;
+        return config;
+      })
+      .finally(() => {
+        this.appConfigInFlight = null;
+      });
+    return this.appConfigInFlight;
+  }
+
+  /** Resolve the app config and run the environment guard. Await it at boot
+   *  to fail on a misconfigured app id before any user can sign up. */
+  async ready(): Promise<AppConfig> {
+    return this.getAppConfig();
+  }
+
+  /** Check a password against this app's policy without a round-trip.
+   *  Returns the failed rules, empty when it passes. A UX pre-check — the
+   *  Core applies the same rules and is authoritative. */
+  async validatePassword(password: string): Promise<string[]> {
+    const { password_policy } = await this.getAppConfig();
+    return checkPassword(password, password_policy);
+  }
+
+  /** No-op unless `expectEnvironment` is set, so apps that don't use the
+   *  guard never pay the extra request. */
+  private async guardEnvironment(): Promise<void> {
+    if (this.expectEnvironment) await this.getAppConfig();
   }
 
   /** Members of this app. Requires `app:user_manage`, which only an
@@ -127,6 +189,7 @@ export class GatewardAuth extends AuthSession {
     password: string,
     opts: { metadata?: Record<string, unknown> } = {},
   ): Promise<RegisterResponse> {
+    await this.guardEnvironment();
     const res = await this.http.request<RegisterResponse>(
       "POST",
       "/v1/auth/register",
@@ -145,6 +208,7 @@ export class GatewardAuth extends AuthSession {
 
   /** Log in and persist the returned token pair. */
   async login(email: string, password: string): Promise<TokenSet> {
+    await this.guardEnvironment();
     const tokens = await this.http.request<TokenResponse>("POST", "/v1/auth/login", {
       body: { email, password },
     });

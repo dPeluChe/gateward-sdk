@@ -15,6 +15,8 @@ export type GatewardUser = Omit<Schemas["MeResponse"], "metadata"> & {
 };
 export type SessionSummary = Schemas["SessionSummary"];
 export type MembershipRole = Schemas["MembershipRole"];
+export type PasswordPolicy = Schemas["PasswordPolicy"];
+export type AppConfig = Schemas["AppConfigResponse"];
 /** `local_metadata` is arbitrary JSON in the contract; widened like
  *  {@link GatewardUser.metadata}. */
 export type MembershipResponse = Omit<
