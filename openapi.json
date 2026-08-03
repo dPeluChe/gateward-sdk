@@ -258,6 +258,32 @@
             }
           },
           {
+            "name": "since",
+            "in": "query",
+            "description": "Inclusive lower bound on `created_at` (RFC 3339, e.g. last-24h queries).",
+            "required": false,
+            "schema": {
+              "type": [
+                "string",
+                "null"
+              ],
+              "format": "date-time"
+            }
+          },
+          {
+            "name": "until",
+            "in": "query",
+            "description": "Inclusive upper bound on `created_at` (RFC 3339).",
+            "required": false,
+            "schema": {
+              "type": [
+                "string",
+                "null"
+              ],
+              "format": "date-time"
+            }
+          },
+          {
             "name": "limit",
             "in": "query",
             "required": false,
@@ -292,6 +318,35 @@
                   "items": {
                     "$ref": "#/components/schemas/EventRecord"
                   }
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Not platform admin"
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ]
+      }
+    },
+    "/v1/admin/scopes": {
+      "get": {
+        "tags": [
+          "api-keys"
+        ],
+        "summary": "Feedback #5: expose the scope catalog so the dashboard loads it\ndynamically instead of hardcoding a list that can drift from the Core.",
+        "operationId": "list_scopes",
+        "responses": {
+          "200": {
+            "description": "Allowed API-key scopes",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ScopesResponse"
                 }
               }
             }
@@ -373,6 +428,34 @@
                 "null"
               ],
               "format": "uuid"
+            }
+          },
+          {
+            "name": "status",
+            "in": "query",
+            "description": "Filter by account status (e.g. `blocked`) — server-side so the\ndashboard doesn't fetch everything to show blocked users.",
+            "required": false,
+            "schema": {
+              "oneOf": [
+                {
+                  "type": "null"
+                },
+                {
+                  "$ref": "#/components/schemas/AccountStatus"
+                }
+              ]
+            }
+          },
+          {
+            "name": "q",
+            "in": "query",
+            "description": "Case-insensitive substring match on email (`?q=term`).",
+            "required": false,
+            "schema": {
+              "type": [
+                "string",
+                "null"
+              ]
             }
           },
           {
@@ -763,6 +846,88 @@
         ]
       }
     },
+    "/v1/apps/{id}": {
+      "delete": {
+        "tags": [
+          "management"
+        ],
+        "summary": "PROVISION-DELETE-001: hard-delete an app for wizard cleanup. Refuses if\nthe app still has memberships, sessions, API keys, or events (409) —\nthose must be removed first (protects against deleting a live app).",
+        "operationId": "delete_app",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "description": "App ID",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "App deleted"
+          },
+          "403": {
+            "description": "Not platform admin"
+          },
+          "404": {
+            "description": "App not found"
+          },
+          "409": {
+            "description": "App has dependent memberships/sessions/keys/events"
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ]
+      }
+    },
+    "/v1/auth/change-password": {
+      "post": {
+        "tags": [
+          "auth"
+        ],
+        "summary": "SELF-001: change your own password while logged in. Unlike\nforgot/reset-password (§11), authorization here is the access token\nplus proof of the current password — no email round-trip.",
+        "description": "Every *other* session in the identity_pool is revoked; the caller's\nown stays alive, since logging someone out of the screen they just\nused to change their password is hostile, not safer.",
+        "operationId": "change_password",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ChangePasswordRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "204": {
+            "description": "Password changed, other sessions revoked"
+          },
+          "400": {
+            "description": "Weak password or same as current"
+          },
+          "401": {
+            "description": "Not authenticated or wrong current password"
+          },
+          "403": {
+            "description": "Service accounts have no password"
+          },
+          "429": {
+            "description": "Rate limited"
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ]
+      }
+    },
     "/v1/auth/forgot-password": {
       "post": {
         "tags": [
@@ -877,6 +1042,84 @@
           },
           "401": {
             "description": "Not authenticated"
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ]
+      }
+    },
+    "/v1/auth/me": {
+      "get": {
+        "tags": [
+          "auth"
+        ],
+        "summary": "SELF-001: who am I. Apps need this right after login/refresh to render\na profile screen without proxying through their own backend with an\nAPI key (which is what `/v1/users/{id}/metadata` forces today).",
+        "operationId": "get_me",
+        "responses": {
+          "200": {
+            "description": "The authenticated user's own profile",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MeResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Not authenticated"
+          },
+          "404": {
+            "description": "User no longer exists"
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ]
+      },
+      "patch": {
+        "tags": [
+          "auth"
+        ],
+        "summary": "SELF-001: write your own per-app metadata (display name, preferences).\nSame storage as `PATCH /v1/users/{id}/metadata`, but gated on\n`users:write_own` and hard-scoped to the caller's own membership —\nthe user id is never taken from the request.",
+        "operationId": "patch_me",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/PatchMeRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Updated profile (metadata shallow-merged)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MeResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "metadata must be a JSON object"
+          },
+          "401": {
+            "description": "Not authenticated"
+          },
+          "403": {
+            "description": "Missing users:write_own scope or no app-scoped session"
+          },
+          "404": {
+            "description": "No membership in the caller's app"
           }
         },
         "security": [
@@ -1200,6 +1443,46 @@
         ]
       }
     },
+    "/v1/ecosystems/{id}": {
+      "delete": {
+        "tags": [
+          "management"
+        ],
+        "summary": "PROVISION-DELETE-001: hard-delete an ecosystem for Setup Wizard cleanup.\nRefuses to delete the system ecosystem, or one that still has identity\npools, apps, or users (409) — the caller must remove children first.",
+        "operationId": "delete_ecosystem",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "description": "Ecosystem ID",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Ecosystem deleted"
+          },
+          "403": {
+            "description": "Not platform admin"
+          },
+          "404": {
+            "description": "Ecosystem not found"
+          },
+          "409": {
+            "description": "System ecosystem, or has dependent resources"
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ]
+      }
+    },
     "/v1/events": {
       "get": {
         "tags": [
@@ -1265,6 +1548,32 @@
                 "string",
                 "null"
               ]
+            }
+          },
+          {
+            "name": "since",
+            "in": "query",
+            "description": "Inclusive lower bound on `created_at` (RFC 3339, e.g. last-24h queries).",
+            "required": false,
+            "schema": {
+              "type": [
+                "string",
+                "null"
+              ],
+              "format": "date-time"
+            }
+          },
+          {
+            "name": "until",
+            "in": "query",
+            "description": "Inclusive upper bound on `created_at` (RFC 3339).",
+            "required": false,
+            "schema": {
+              "type": [
+                "string",
+                "null"
+              ],
+              "format": "date-time"
             }
           },
           {
@@ -1441,6 +1750,46 @@
         ]
       }
     },
+    "/v1/identity-pools/{id}": {
+      "delete": {
+        "tags": [
+          "management"
+        ],
+        "summary": "PROVISION-DELETE-001: hard-delete an identity pool for wizard cleanup.\nRefuses the system pool, or one that still has apps or users (409).",
+        "operationId": "delete_identity_pool",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "description": "Identity pool ID",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Identity pool deleted"
+          },
+          "403": {
+            "description": "Not platform admin"
+          },
+          "404": {
+            "description": "Identity pool not found"
+          },
+          "409": {
+            "description": "System pool, or has dependent apps/users"
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ]
+      }
+    },
     "/v1/sessions": {
       "get": {
         "tags": [
@@ -1466,6 +1815,47 @@
           },
           "403": {
             "description": "Missing session:read_own scope"
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ]
+      },
+      "delete": {
+        "tags": [
+          "sessions"
+        ],
+        "summary": "SELF-001: \"cerrar sesión en todos lados\". The sweep itself already\nexisted (`session::revoke_all_for_user_in_pool`, used by reset-password);\nthis exposes it to the session's owner.",
+        "operationId": "revoke_all_own_sessions",
+        "parameters": [
+          {
+            "name": "include_current",
+            "in": "query",
+            "description": "Whether to also revoke the session making the request. Defaults to\nfalse — \"log out everywhere else\" is the common case, and the SDK\ncan still call `/v1/auth/logout` for the current one.",
+            "required": false,
+            "schema": {
+              "type": "boolean"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Sessions revoked",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RevokeAllResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Not authenticated"
+          },
+          "403": {
+            "description": "Missing session:revoke_own scope"
           }
         },
         "security": [
@@ -1653,7 +2043,17 @@
             ],
             "format": "uuid"
           },
-          "client_info": {},
+          "client_info": {
+            "oneOf": [
+              {
+                "type": "null"
+              },
+              {
+                "$ref": "#/components/schemas/ClientInfo",
+                "description": "Parsed client context (browser/os/device/country/timezone/…)."
+              }
+            ]
+          },
           "created_at": {
             "type": "string",
             "format": "date-time"
@@ -1712,6 +2112,13 @@
             "type": "string",
             "format": "date-time"
           },
+          "expires_at": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "date-time"
+          },
           "id": {
             "type": "string",
             "format": "uuid"
@@ -1746,6 +2153,13 @@
           "ecosystem_id": {
             "type": "string",
             "format": "uuid"
+          },
+          "expires_at": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "date-time"
           },
           "id": {
             "type": "string",
@@ -1832,6 +2246,143 @@
           }
         }
       },
+      "ChangePasswordRequest": {
+        "type": "object",
+        "required": [
+          "current_password",
+          "new_password"
+        ],
+        "properties": {
+          "current_password": {
+            "type": "string"
+          },
+          "new_password": {
+            "type": "string"
+          }
+        }
+      },
+      "ClientInfo": {
+        "type": "object",
+        "description": "Typed view of the `client_info` jsonb stored on a session / event — so the\nOpenAPI contract exposes real properties instead of an opaque object.\nMirrors the fields [`ClientContext::to_metadata`] writes (all optional; only\npresent fields are serialized).",
+        "properties": {
+          "browser": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "browser_version": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "country": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "country_code": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "device_id": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "device_type": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "locale": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "os": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "timezone": {
+            "type": [
+              "string",
+              "null"
+            ]
+          }
+        }
+      },
+      "CoreEventMetadata": {
+        "type": "object",
+        "description": "Documented shape of `EventRecord.metadata` for events the Core emits\nitself (item #7 in dashboard feedback). Not the runtime type of `metadata`\n— that stays free-form `Value` because custom app events define their own\nkeys — but a typed reference the dashboard can cast to. All fields optional;\nwhich appear depends on `event_type`.",
+        "properties": {
+          "api_key_id": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "uuid",
+            "description": "API key id on `api_key_issued` / `api_key_revoked`."
+          },
+          "email": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "Service-account email on `api_key_issued`."
+          },
+          "keys": {
+            "type": [
+              "array",
+              "null"
+            ],
+            "items": {
+              "type": "string"
+            },
+            "description": "Top-level keys touched by a metadata patch (`*_metadata_updated`)."
+          },
+          "new_status": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "New `account_status` on admin status changes."
+          },
+          "reason": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "Blocking/banning reason (`admin_user_blocked` / `admin_user_banned`)."
+          },
+          "scopes": {
+            "type": [
+              "array",
+              "null"
+            ],
+            "items": {
+              "type": "string"
+            },
+            "description": "Granted scopes on `api_key_issued`."
+          },
+          "target_email": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "Target user's email on admin status changes."
+          }
+        }
+      },
       "CreateApiKeyRequest": {
         "type": "object",
         "required": [
@@ -1854,6 +2405,14 @@
           },
           "email": {
             "type": "string"
+          },
+          "expires_at": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "date-time",
+            "description": "Optional expiry (RFC 3339). Omit for a non-expiring key. Must be in\nthe future; the Core rejects the key on every use once it passes."
           },
           "identity_pool_id": {
             "type": "string",
@@ -2018,7 +2577,9 @@
               "null"
             ]
           },
-          "metadata": {},
+          "metadata": {
+            "description": "Free-form JSON. Custom app events carry arbitrary keys; Core-emitted\nevents (`admin_*`, `login_*`, `*_metadata_updated`, `api_key_*`) carry\nthe well-known shape documented by [`CoreEventMetadata`] — the dashboard\ncan narrow to it by `event_type`."
+          },
           "session_id": {
             "type": [
               "string",
@@ -2226,6 +2787,22 @@
             ],
             "format": "int64"
           },
+          "since": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "date-time",
+            "description": "Inclusive lower bound on `created_at` (RFC 3339, e.g. last-24h queries)."
+          },
+          "until": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "date-time",
+            "description": "Inclusive upper bound on `created_at` (RFC 3339)."
+          },
           "user_id": {
             "type": [
               "string",
@@ -2265,6 +2842,24 @@
               "null"
             ],
             "format": "int64"
+          },
+          "q": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "Case-insensitive substring match on email (`?q=term`)."
+          },
+          "status": {
+            "oneOf": [
+              {
+                "type": "null"
+              },
+              {
+                "$ref": "#/components/schemas/AccountStatus",
+                "description": "Filter by account status (e.g. `blocked`) — server-side so the\ndashboard doesn't fetch everything to show blocked users."
+              }
+            ]
           }
         }
       },
@@ -2307,6 +2902,75 @@
           }
         }
       },
+      "MeResponse": {
+        "type": "object",
+        "required": [
+          "user_id",
+          "email",
+          "email_verified",
+          "account_status",
+          "actor_kind",
+          "scopes",
+          "metadata",
+          "created_at"
+        ],
+        "properties": {
+          "account_status": {
+            "$ref": "#/components/schemas/AccountStatus"
+          },
+          "actor_kind": {
+            "$ref": "#/components/schemas/ActorKind"
+          },
+          "app_id": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "uuid"
+          },
+          "created_at": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "email": {
+            "type": "string"
+          },
+          "email_verified": {
+            "type": "boolean"
+          },
+          "membership_role": {
+            "oneOf": [
+              {
+                "type": "null"
+              },
+              {
+                "$ref": "#/components/schemas/MembershipRole",
+                "description": "Role in the caller's app — `null` for a platform-admin session,\nwhich isn't scoped to an app."
+              }
+            ]
+          },
+          "metadata": {
+            "description": "The caller's own `app_memberships.local_metadata` — `{}` when the\nsession isn't app-scoped."
+          },
+          "scopes": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "user_id": {
+            "type": "string",
+            "format": "uuid"
+          }
+        }
+      },
+      "MembershipRole": {
+        "type": "string",
+        "enum": [
+          "member",
+          "app_admin"
+        ]
+      },
       "PaginationQuery": {
         "type": "object",
         "properties": {
@@ -2323,6 +2987,17 @@
               "null"
             ],
             "format": "int64"
+          }
+        }
+      },
+      "PatchMeRequest": {
+        "type": "object",
+        "required": [
+          "metadata"
+        ],
+        "properties": {
+          "metadata": {
+            "description": "JSON object shallow-merged into the caller's own `local_metadata`."
           }
         }
       },
@@ -2408,6 +3083,34 @@
           },
           "token": {
             "type": "string"
+          }
+        }
+      },
+      "RevokeAllResponse": {
+        "type": "object",
+        "required": [
+          "revoked"
+        ],
+        "properties": {
+          "revoked": {
+            "type": "integer",
+            "format": "int64",
+            "minimum": 0
+          }
+        }
+      },
+      "ScopesResponse": {
+        "type": "object",
+        "required": [
+          "scopes"
+        ],
+        "properties": {
+          "scopes": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "The catalog of scopes a service-account API key may be granted."
           }
         }
       },

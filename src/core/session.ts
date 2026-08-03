@@ -1,8 +1,13 @@
 import { HttpClient } from "./http.js";
 import { GatewardError } from "./errors.js";
+import {
+  AuthStateEmitter,
+  type AuthEvent,
+  type AuthStateListener,
+} from "./events.js";
 import { MemoryStorage, type TokenStorage, type TokenSet } from "./storage.js";
 import { decodeClaims } from "../jwt/verify.js";
-import type { TokenResponse } from "./types.js";
+import type { GatewardClaims, GatewardUser, TokenResponse } from "./types.js";
 
 export interface SessionOptions {
   /** Token persistence (default {@link MemoryStorage}). */
@@ -21,11 +26,26 @@ export abstract class AuthSession {
   private readonly refreshSkewSec: number;
   /** Single-flight guard so concurrent calls trigger at most one refresh. */
   private refreshInFlight: Promise<TokenSet> | null = null;
+  private readonly emitter = new AuthStateEmitter();
+  /** Identity is stable for the life of a session, so `/v1/auth/me` is worth
+   *  caching — cleared whenever the session itself changes. */
+  private cachedUser: GatewardUser | null = null;
+  private userInFlight: Promise<GatewardUser> | null = null;
 
   protected constructor(http: HttpClient, opts: SessionOptions = {}) {
     this.http = http;
     this.storage = opts.storage ?? new MemoryStorage();
     this.refreshSkewSec = opts.refreshSkewSec ?? 30;
+  }
+
+  /** Subscribe to session transitions (`signed_in`, `token_refreshed`,
+   *  `signed_out`, `session_expired`). Returns an unsubscribe function.
+   *
+   *  `session_expired` is what an app binds its forced-logout path to: the
+   *  refresh token died server-side, so the local session is already gone by
+   *  the time the listener runs. */
+  onAuthStateChange(listener: AuthStateListener): () => void {
+    return this.emitter.subscribe(listener);
   }
 
   /** Revoke the current session server-side and clear stored tokens. Clears
@@ -42,7 +62,56 @@ export abstract class AuthSession {
       // Best-effort: a failed server call still clears the local session.
     } finally {
       await this.storage.clear();
+      this.forget("signed_out");
     }
+  }
+
+  /** The caller's identity (`GET /v1/auth/me`) — `{id, email, role, metadata}`.
+   *  Cached for the session; pass `{ force: true }` after writing metadata.
+   *  Concurrent calls share one request. */
+  async getUser(opts: { force?: boolean } = {}): Promise<GatewardUser> {
+    if (!opts.force && this.cachedUser) return this.cachedUser;
+    if (!opts.force && this.userInFlight) return this.userInFlight;
+
+    this.userInFlight = this.authedRequest<GatewardUser>("GET", "/v1/auth/me")
+      .then((user) => {
+        this.cachedUser = user;
+        return user;
+      })
+      .finally(() => {
+        this.userInFlight = null;
+      });
+    return this.userInFlight;
+  }
+
+  /** Shallow-merge into the caller's own profile metadata (`PATCH
+   *  /v1/auth/me`, scope `users:write_own`). Refreshes the cached user. */
+  async updateProfile(
+    metadata: Record<string, unknown>,
+  ): Promise<GatewardUser> {
+    const user = await this.authedRequest<GatewardUser>(
+      "PATCH",
+      "/v1/auth/me",
+      { body: { metadata } },
+    );
+    this.cachedUser = user;
+    return user;
+  }
+
+  /** Drop the local session as if the server had ended it. */
+  protected async forgetLocalSession(): Promise<void> {
+    await this.storage.clear();
+    this.forget("signed_out");
+  }
+
+  /** Claims of the current access token, decoded locally (no round-trip).
+   *  Refreshes first if the token is near expiry.
+   *
+   *  These are NOT verified — the token came from this client's own storage,
+   *  so they are only safe as UI hints. A backend must verify a token it
+   *  received with `GatewardServer.verifyToken`. */
+  async getClaims(): Promise<GatewardClaims> {
+    return decodeClaims(await this.getAccessToken());
   }
 
   /** Force a refresh using the stored refresh token, rotating both tokens. */
@@ -86,14 +155,27 @@ export abstract class AuthSession {
   }
 
   /** Persist a fresh token pair (called by subclass login methods). */
-  protected async persist(tokens: TokenResponse): Promise<TokenSet> {
+  protected async persist(
+    tokens: TokenResponse,
+    event: AuthEvent = "signed_in",
+  ): Promise<TokenSet> {
     const set: TokenSet = {
       accessToken: tokens.access_token,
       refreshToken: tokens.refresh_token,
       expiresAt: expiryOf(tokens),
     };
     await this.storage.set(set);
+    // A refresh rotates tokens for the same identity; a login can be a
+    // different user entirely, so only that invalidates the cached user.
+    if (event !== "token_refreshed") this.cachedUser = null;
+    this.emitter.emit({ event, tokens: set });
     return set;
+  }
+
+  /** Drop every trace of the session locally and announce it. */
+  private forget(event: Extract<AuthEvent, "signed_out" | "session_expired">) {
+    this.cachedUser = null;
+    this.emitter.emit({ event, tokens: null });
   }
 
   private isExpiring(tokens: TokenSet): boolean {
@@ -123,13 +205,16 @@ export abstract class AuthSession {
       });
     } catch (err) {
       // A dead/rotated refresh token means the session is gone — drop it so
-      // the app can re-auth instead of looping on a doomed token.
+      // the app can re-auth instead of looping on a doomed token, and tell
+      // subscribers, or the UI keeps rendering an authenticated shell over a
+      // session that no longer exists.
       if (err instanceof GatewardError && err.status === 401) {
         await this.storage.clear();
+        this.forget("session_expired");
       }
       throw err;
     }
-    return this.persist(tokens);
+    return this.persist(tokens, "token_refreshed");
   }
 }
 

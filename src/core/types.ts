@@ -7,6 +7,12 @@ type Schemas = components["schemas"];
 // NOT exported here; the admin dashboard generates its own from the contract.
 export type TokenResponse = Schemas["TokenResponse"];
 export type RegisterResponse = Schemas["RegisterResponse"];
+/** The caller's own identity, from `GET /v1/auth/me`.
+ *  `metadata` is arbitrary JSON in the contract (utoipa renders it as the
+ *  empty object type), so it is widened to match `getUserMetadata`. */
+export type GatewardUser = Omit<Schemas["MeResponse"], "metadata"> & {
+  metadata: Record<string, unknown>;
+};
 export type SessionSummary = Schemas["SessionSummary"];
 export type EventRecord = Schemas["EventRecord"];
 export type ActorKind = Schemas["ActorKind"];

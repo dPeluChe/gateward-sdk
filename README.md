@@ -32,8 +32,15 @@ const auth = new GatewardAuth({
   storage: createWebStorage(), // opcional; por defecto en memoria
 });
 
-await auth.register("user@app.com", "s3cret");
+await auth.register("user@app.com", "s3cret"); // 202: el Core verifica email primero
 await auth.login("user@app.com", "s3cret");
+
+// Identidad del caller. Cacheada por sesión.
+const user = await auth.getUser();
+
+// Perfil propio (merge shallow) y password.
+await auth.updateProfile({ display_name: "Ana", locale: "es-MX" });
+await auth.changePassword("s3cret", "otra-mas-larga");
 
 // getAccessToken() refresca solo si el token está por expirar (single-flight).
 const token = await auth.getAccessToken();
@@ -41,12 +48,59 @@ const token = await auth.getAccessToken();
 // Helper autenticado: adjunta el Bearer y reintenta 1 vez tras un 401 (refresh).
 const sessions = await auth.listSessions();
 await auth.revokeSession(sessions[0].id);
+await auth.revokeAllSessions(); // cerrar en todos lados, menos acá
 
 await auth.logout(); // revoca en el server y limpia el storage (best-effort)
 ```
 
 `GatewardAuth` guarda el par de tokens en un `TokenStorage` pluggable
 (`MemoryStorage` por defecto, `createWebStorage()` para `localStorage`, o el tuyo).
+
+### Usuario actual
+
+`getUser()` pega a `GET /v1/auth/me` y devuelve `{ user_id, email,
+email_verified, account_status, actor_kind, app_id, membership_role, scopes,
+metadata, created_at }` — la identidad más el membership en el app del token.
+Se cachea mientras dure la sesión (las llamadas concurrentes comparten un solo
+request); `{ force: true }` re-consulta.
+
+`membership_role` es el rol propio de Gateward (`member` / `app_admin`), y es
+`null` en un token de platform-admin. El rol de **tu** app, junto con el nombre
+visible, vive en `metadata`.
+
+`updateProfile(metadata)` hace merge shallow sobre ese `metadata` (scope
+`users:write_own`) y refresca el cache — no hace falta que tu backend proxee
+con una API key.
+
+> `metadata` la escribe el propio usuario. Es texto que él eligió: úsala para
+> mostrar, **nunca para autorizar**.
+
+`getClaims()` decodifica el access token actual sin round-trip. **No están
+verificados** — vienen del storage de este mismo cliente, así que solo sirven
+como pista de UI. Un backend que recibe un token lo verifica con
+`GatewardServer.verifyToken`.
+
+### Cambios de estado de sesión
+
+```ts
+const off = auth.onAuthStateChange(({ event, tokens }) => {
+  if (event === "session_expired") router.push("/login"); // forzado por el server
+});
+```
+
+| Evento | Cuándo |
+|---|---|
+| `signed_in` | `login()` persistió un par nuevo |
+| `token_refreshed` | el par rotó (mismo usuario) |
+| `signed_out` | `logout()` explícito |
+| `session_expired` | el refresh token murió del lado del server — la sesión local ya está borrada |
+
+`session_expired` está separado de `signed_out` a propósito: el primero es el
+server tirando la sesión bajo los pies de la app (redirigí ya), el segundo es
+el usuario yéndose. Sin esta señal el SDK limpia el storage en silencio y la UI
+sigue pintando una sesión que no existe.
+
+Un listener que tira error queda aislado: no rompe el pipeline de tokens.
 
 Manda automáticamente un **`X-Gateward-Device-Id`** estable (generado y persistido
 en `localStorage` en el browser) para que el Core reconozca el mismo dispositivo entre
