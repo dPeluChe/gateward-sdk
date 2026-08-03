@@ -197,6 +197,7 @@ export abstract class AuthSession {
     return set;
   }
 
+  /** Drop every trace of the session locally and announce it. */
   private forget(event: Extract<AuthEvent, "signed_out" | "session_expired">) {
     this.cachedUser = null;
     this.emitter.emit({ event, tokens: null });
