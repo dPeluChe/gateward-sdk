@@ -120,13 +120,16 @@ export function GatewardProvider({
   );
 
   const register = useCallback(
-    async (
-      email: string,
-      password: string,
-      opts: { metadata?: Record<string, unknown> } = {},
-    ): Promise<void> => {
+    async (email: string, password: string): Promise<void> => {
       // No tokens issued (the Core verifies email first), so no state change.
-      await run(() => client.register(email, password, opts));
+      await run(() => client.register(email, password));
+    },
+    [client, run],
+  );
+
+  const updateProfile = useCallback(
+    async (metadata: Record<string, unknown>): Promise<void> => {
+      setUser(await run(() => client.updateProfile(metadata)));
     },
     [client, run],
   );
@@ -149,10 +152,21 @@ export function GatewardProvider({
       error,
       login,
       register,
+      updateProfile,
       logout,
       refreshUser,
     }),
-    [client, user, status, error, login, register, logout, refreshUser],
+    [
+      client,
+      user,
+      status,
+      error,
+      login,
+      register,
+      updateProfile,
+      logout,
+      refreshUser,
+    ],
   );
 
   return (

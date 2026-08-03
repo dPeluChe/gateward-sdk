@@ -17,11 +17,9 @@ export interface GatewardContextValue {
   /** Last login/register/logout failure, cleared when the next one starts. */
   error: Error | null;
   login(email: string, password: string): Promise<TokenSet>;
-  register(
-    email: string,
-    password: string,
-    opts?: { metadata?: Record<string, unknown> },
-  ): Promise<void>;
+  register(email: string, password: string): Promise<void>;
+  /** Shallow-merge the caller's own profile metadata. */
+  updateProfile(metadata: Record<string, unknown>): Promise<void>;
   logout(): Promise<void>;
   /** Re-read `/v1/auth/me` — call after your backend writes user metadata. */
   refreshUser(): Promise<void>;

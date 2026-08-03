@@ -24,18 +24,16 @@ function tokenResponse(): StubResponse {
 
 const meResponse = (email = "ana@app.com"): StubResponse => ({
   json: {
-    id: "user-1",
+    user_id: "user-1",
     email,
+    email_verified: true,
     account_status: "active",
     actor_kind: "human",
-    created_at: "2026-08-01T00:00:00Z",
-    ecosystem_id: "eco-1",
-    identity_pool_id: "pool-1",
     app_id: APP,
-    session_id: "sess-1",
-    role: "member",
+    membership_role: "member",
+    scopes: ["session:read_own", "users:write_own"],
     metadata: { display_name: "Ana" },
-    scopes: ["session:read_own"],
+    created_at: "2026-08-01T00:00:00Z",
   },
 });
 
