@@ -319,6 +319,12 @@ new GatewardAuth({ baseUrl, appId, retry: { maxRetries: 3, baseDelayMs: 200 } })
 `GatewardAuth` también expone: `forgotPassword(email)`, `resetPassword(token, newPassword)`,
 `verifyEmail(token)`, `resendVerificationEmail(email)`.
 
+## Migrar una app existente
+
+Guía por patrón de auth (Convex singleton, NextAuth, zustand+axios, JWT propio,
+gating SSR) con el diff mínimo de cada uno, migración de usuarios y
+bloqueadores conocidos: [`docs/GUIDES/MIGRATION.md`](./docs/GUIDES/MIGRATION.md).
+
 ## Decisiones de diseño
 
 El *por qué* detrás del ciclo de sesión (eventos, cache de `getUser`, alcance
