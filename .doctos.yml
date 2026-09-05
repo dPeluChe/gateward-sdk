@@ -1,0 +1,6 @@
+docs_root: docs
+naming: UPPERCASE_SNAKE
+folders:
+  ARCHITECTURE: decisiones de diseño del SDK (sesión, refresh, storage, SSR)
+  GUIDES: migración desde otros patrones de auth, política de releases — solo lo no obvio
+root_allowed: []

@@ -959,6 +959,195 @@
         ]
       }
     },
+    "/v1/apps/{app_id}/email-provider": {
+      "get": {
+        "tags": [
+          "email"
+        ],
+        "operationId": "get_email_provider",
+        "parameters": [
+          {
+            "name": "app_id",
+            "in": "path",
+            "description": "App ID",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "The app's email provider",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/EmailProviderResponse"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Not platform admin"
+          },
+          "404": {
+            "description": "App has no provider of its own (it uses the global one)"
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ]
+      },
+      "put": {
+        "tags": [
+          "email"
+        ],
+        "summary": "Idempotent upsert: an app has at most one provider, so PUT reads better\nthan juggling POST-then-PATCH for something with a single instance.",
+        "operationId": "put_email_provider",
+        "parameters": [
+          {
+            "name": "app_id",
+            "in": "path",
+            "description": "App ID",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/PutEmailProviderRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Provider stored",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/EmailProviderResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid provider configuration, or no encryption key configured"
+          },
+          "403": {
+            "description": "Not platform admin"
+          },
+          "404": {
+            "description": "App not found"
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ]
+      },
+      "delete": {
+        "tags": [
+          "email"
+        ],
+        "operationId": "delete_email_provider",
+        "parameters": [
+          {
+            "name": "app_id",
+            "in": "path",
+            "description": "App ID",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Provider removed; the app falls back to the global mailer"
+          },
+          "403": {
+            "description": "Not platform admin"
+          },
+          "404": {
+            "description": "App has no provider of its own"
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ]
+      }
+    },
+    "/v1/apps/{app_id}/email-provider/test": {
+      "post": {
+        "tags": [
+          "email"
+        ],
+        "summary": "The button that makes this feature trustworthy: it sends a real message\nthrough the stored configuration and reports the provider's own error.\nWithout it, the first test of a new provider is a real user's registration.",
+        "operationId": "test_email_provider",
+        "parameters": [
+          {
+            "name": "app_id",
+            "in": "path",
+            "description": "App ID",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/TestEmailRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Test message delivered",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TestEmailResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid address, or the provider rejected the message (error included)"
+          },
+          "403": {
+            "description": "Not platform admin"
+          },
+          "404": {
+            "description": "App has no provider of its own"
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ]
+      }
+    },
     "/v1/apps/{app_id}/members": {
       "get": {
         "tags": [
@@ -1118,6 +1307,430 @@
           },
           "409": {
             "description": "Would leave the app without an app_admin"
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          },
+          {
+            "api_key": []
+          }
+        ]
+      }
+    },
+    "/v1/apps/{app_id}/webhooks": {
+      "get": {
+        "tags": [
+          "webhooks"
+        ],
+        "operationId": "list_webhooks",
+        "parameters": [
+          {
+            "name": "app_id",
+            "in": "path",
+            "description": "App ID",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Webhooks of the app",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/WebhookResponse"
+                  }
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Not authorized for this app"
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          },
+          {
+            "api_key": []
+          }
+        ]
+      },
+      "post": {
+        "tags": [
+          "webhooks"
+        ],
+        "operationId": "create_webhook",
+        "parameters": [
+          {
+            "name": "app_id",
+            "in": "path",
+            "description": "App ID",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CreateWebhookRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Webhook created — `secret` is shown only here",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CreatedWebhookResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid URL or too many event types, or no encryption key configured"
+          },
+          "403": {
+            "description": "Not platform admin, and not app:user_manage on this app"
+          },
+          "404": {
+            "description": "App not found"
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          },
+          {
+            "api_key": []
+          }
+        ]
+      }
+    },
+    "/v1/apps/{app_id}/webhooks/{id}": {
+      "get": {
+        "tags": [
+          "webhooks"
+        ],
+        "operationId": "get_webhook",
+        "parameters": [
+          {
+            "name": "app_id",
+            "in": "path",
+            "description": "App ID",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          },
+          {
+            "name": "id",
+            "in": "path",
+            "description": "Webhook ID",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "The webhook",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/WebhookResponse"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Not authorized for this app"
+          },
+          "404": {
+            "description": "No such webhook in this app"
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          },
+          {
+            "api_key": []
+          }
+        ]
+      },
+      "delete": {
+        "tags": [
+          "webhooks"
+        ],
+        "operationId": "delete_webhook",
+        "parameters": [
+          {
+            "name": "app_id",
+            "in": "path",
+            "description": "App ID",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          },
+          {
+            "name": "id",
+            "in": "path",
+            "description": "Webhook ID",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Webhook and its delivery log removed"
+          },
+          "403": {
+            "description": "Not authorized for this app"
+          },
+          "404": {
+            "description": "No such webhook in this app"
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          },
+          {
+            "api_key": []
+          }
+        ]
+      },
+      "patch": {
+        "tags": [
+          "webhooks"
+        ],
+        "operationId": "update_webhook",
+        "parameters": [
+          {
+            "name": "app_id",
+            "in": "path",
+            "description": "App ID",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          },
+          {
+            "name": "id",
+            "in": "path",
+            "description": "Webhook ID",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/UpdateWebhookRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Webhook updated",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/WebhookResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid URL, status or event types"
+          },
+          "403": {
+            "description": "Not authorized for this app"
+          },
+          "404": {
+            "description": "No such webhook in this app"
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          },
+          {
+            "api_key": []
+          }
+        ]
+      }
+    },
+    "/v1/apps/{app_id}/webhooks/{id}/deliveries": {
+      "get": {
+        "tags": [
+          "webhooks"
+        ],
+        "summary": "The delivery log the plan asks for. This is what turns \"the webhook isn't\nworking\" into a specific answer: which event, how many attempts, what the\nreceiver actually said.",
+        "operationId": "list_webhook_deliveries",
+        "parameters": [
+          {
+            "name": "app_id",
+            "in": "path",
+            "description": "App ID",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          },
+          {
+            "name": "id",
+            "in": "path",
+            "description": "Webhook ID",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          },
+          {
+            "name": "status",
+            "in": "query",
+            "description": "`pending`, `sending`, `delivered` or `failed`.",
+            "required": false,
+            "schema": {
+              "type": [
+                "string",
+                "null"
+              ]
+            }
+          },
+          {
+            "name": "limit",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": [
+                "integer",
+                "null"
+              ],
+              "format": "int64"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Delivery attempts, newest first",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/DeliveryResponse"
+                  }
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Not authorized for this app"
+          },
+          "404": {
+            "description": "No such webhook in this app"
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          },
+          {
+            "api_key": []
+          }
+        ]
+      }
+    },
+    "/v1/apps/{app_id}/webhooks/{id}/deliveries/{delivery_id}/redeliver": {
+      "post": {
+        "tags": [
+          "webhooks"
+        ],
+        "summary": "Re-queues a delivery that gave up. The receiver was down for an hour and\nthe app still needs the event — without this the only recovery is reading\nthe events API and reconciling by hand.",
+        "operationId": "redeliver_webhook_delivery",
+        "parameters": [
+          {
+            "name": "app_id",
+            "in": "path",
+            "description": "App ID",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          },
+          {
+            "name": "id",
+            "in": "path",
+            "description": "Webhook ID",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          },
+          {
+            "name": "delivery_id",
+            "in": "path",
+            "description": "Delivery ID",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Delivery re-queued",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DeliveryResponse"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Not authorized for this app"
+          },
+          "404": {
+            "description": "No such delivery for this webhook"
           }
         },
         "security": [
@@ -3052,6 +3665,49 @@
           }
         }
       },
+      "CreateWebhookRequest": {
+        "type": "object",
+        "required": [
+          "url"
+        ],
+        "properties": {
+          "description": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "event_types": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "Omit or leave empty to receive every event."
+          },
+          "url": {
+            "type": "string"
+          }
+        }
+      },
+      "CreatedWebhookResponse": {
+        "allOf": [
+          {
+            "$ref": "#/components/schemas/WebhookResponse"
+          },
+          {
+            "type": "object",
+            "required": [
+              "secret"
+            ],
+            "properties": {
+              "secret": {
+                "type": "string"
+              }
+            }
+          }
+        ],
+        "description": "The signing secret is returned **once**, at creation. Same contract as an\nAPI key: it exists to be stored by the receiver, and a secret the platform\ncan re-read is one an operator can leak later."
+      },
       "DeleteAccountRequest": {
         "type": "object",
         "properties": {
@@ -3061,6 +3717,82 @@
               "null"
             ],
             "description": "Required whenever the account has a password. A valid access token is\nnot enough on its own for an irreversible action."
+          }
+        }
+      },
+      "DeliveriesQuery": {
+        "type": "object",
+        "properties": {
+          "limit": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "int64"
+          },
+          "status": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "`pending`, `sending`, `delivered` or `failed`."
+          }
+        }
+      },
+      "DeliveryResponse": {
+        "type": "object",
+        "required": [
+          "id",
+          "event_type",
+          "status",
+          "attempts",
+          "next_attempt_at",
+          "created_at",
+          "payload"
+        ],
+        "properties": {
+          "attempts": {
+            "type": "integer",
+            "format": "int32"
+          },
+          "created_at": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "delivered_at": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "date-time"
+          },
+          "event_type": {
+            "type": "string"
+          },
+          "id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "last_error": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "next_attempt_at": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "payload": {},
+          "response_status": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "int32"
+          },
+          "status": {
+            "type": "string"
           }
         }
       },
@@ -3085,6 +3817,92 @@
           },
           "status": {
             "type": "string"
+          }
+        }
+      },
+      "EmailProviderResponse": {
+        "type": "object",
+        "required": [
+          "app_id",
+          "kind",
+          "from_address",
+          "has_secret",
+          "status",
+          "updated_at"
+        ],
+        "properties": {
+          "app_id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "from_address": {
+            "type": "string"
+          },
+          "from_name": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "has_secret": {
+            "type": "boolean",
+            "description": "Whether a credential is stored. The credential itself is never\nreturned, in any shape — not masked, not truncated."
+          },
+          "kind": {
+            "type": "string"
+          },
+          "last_error": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "Last delivery failure verbatim from the provider (\"domain is not\nverified\", \"invalid API key\"). Without it a dead provider is invisible\nuntil users start complaining."
+          },
+          "last_error_at": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "date-time"
+          },
+          "last_success_at": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "date-time"
+          },
+          "smtp_host": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "smtp_port": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "int32"
+          },
+          "smtp_tls": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "smtp_username": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "status": {
+            "type": "string"
+          },
+          "updated_at": {
+            "type": "string",
+            "format": "date-time"
           }
         }
       },
@@ -3831,6 +4649,67 @@
           }
         }
       },
+      "PutEmailProviderRequest": {
+        "type": "object",
+        "required": [
+          "kind",
+          "from_address"
+        ],
+        "properties": {
+          "from_address": {
+            "type": "string"
+          },
+          "from_name": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "kind": {
+            "type": "string",
+            "description": "`smtp` or `resend`."
+          },
+          "secret": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "API key or SMTP password. Omit on update to keep the stored one —\notherwise editing the From address would silently wipe the credential."
+          },
+          "smtp_host": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "smtp_port": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "int32"
+          },
+          "smtp_tls": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "`starttls` (default), `implicit` or `none`."
+          },
+          "smtp_username": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "status": {
+            "type": [
+              "string",
+              "null"
+            ]
+          }
+        }
+      },
       "RefreshRequest": {
         "type": "object",
         "required": [
@@ -4048,6 +4927,28 @@
           }
         }
       },
+      "TestEmailRequest": {
+        "type": "object",
+        "required": [
+          "to"
+        ],
+        "properties": {
+          "to": {
+            "type": "string"
+          }
+        }
+      },
+      "TestEmailResponse": {
+        "type": "object",
+        "required": [
+          "delivered"
+        ],
+        "properties": {
+          "delivered": {
+            "type": "boolean"
+          }
+        }
+      },
       "TokenResponse": {
         "type": "object",
         "required": [
@@ -4159,6 +5060,39 @@
           }
         }
       },
+      "UpdateWebhookRequest": {
+        "type": "object",
+        "properties": {
+          "description": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "event_types": {
+            "type": [
+              "array",
+              "null"
+            ],
+            "items": {
+              "type": "string"
+            }
+          },
+          "status": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "`active` or `disabled`. Disabling stops the fan-out without losing the\nendpoint's history."
+          },
+          "url": {
+            "type": [
+              "string",
+              "null"
+            ]
+          }
+        }
+      },
       "UserMetadataResponse": {
         "type": "object",
         "required": [
@@ -4253,6 +5187,70 @@
             "type": "string"
           }
         }
+      },
+      "WebhookResponse": {
+        "type": "object",
+        "required": [
+          "id",
+          "app_id",
+          "url",
+          "event_types",
+          "status",
+          "created_at"
+        ],
+        "properties": {
+          "app_id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "created_at": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "description": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "event_types": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "Empty means every event."
+          },
+          "id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "last_error": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "last_error_at": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "date-time"
+          },
+          "last_success_at": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "date-time"
+          },
+          "status": {
+            "type": "string"
+          },
+          "url": {
+            "type": "string"
+          }
+        }
       }
     },
     "securitySchemes": {
@@ -4291,6 +5289,14 @@
     {
       "name": "apps",
       "description": "Public per-app configuration"
+    },
+    {
+      "name": "webhooks",
+      "description": "Signed event webhooks per app (Fase 3)"
+    },
+    {
+      "name": "email",
+      "description": "Per-app email provider configuration (platform admin)"
     },
     {
       "name": "management",
