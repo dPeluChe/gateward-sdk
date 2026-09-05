@@ -20,9 +20,16 @@ OpenAPI** (`GET /api-docs/openapi.json`), no a mano.
 
 ## Instalación
 
+Todavía **no está publicado en npm** (falta la org `gateward` y el `NPM_TOKEN`, DIST-001).
+Hoy se consume desde el repo clonado al lado, como hacen el dashboard y el demo:
+
 ```bash
-pnpm add @gateward/sdk
+git clone https://github.com/dPeluChe/gateward-sdk ../gateward-sdk
+pnpm -C ../gateward-sdk install && pnpm -C ../gateward-sdk build   # genera dist/
+# en tu package.json: "@gateward/sdk": "file:../gateward-sdk"
 ```
+
+Cuando esté publicado será `pnpm add @gateward/sdk` y desaparece el requisito del clon.
 
 MIT. Publicación y política SemVer en
 [`docs/GUIDES/RELEASING.md`](./docs/GUIDES/RELEASING.md); cambios en
@@ -476,3 +483,9 @@ pnpm gen:types
 - `POST /v1/auth/logout` requiere **`Authorization: Bearer <access>`** (no el refresh en body).
 - Endpoints con `AppContext` requieren el header **`X-Gateward-App-Id`**.
 - `POST /v1/events` (sendEvent) exige scope `events:write` y `event_type` namespaced.
+
+## Documentación
+
+Estructura declarada en [`.doctos.yml`](./.doctos.yml), índice en [docs/README.md](./docs/README.md).
+El contrato `openapi.json` se regenera con `pnpm gen:contract` (necesita `../gateward-core`
+clonado al lado; no necesita un Core corriendo).

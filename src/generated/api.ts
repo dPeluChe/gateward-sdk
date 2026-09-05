@@ -257,6 +257,47 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/v1/apps/{app_id}/email-provider": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get: operations["get_email_provider"];
+        /**
+         * Idempotent upsert: an app has at most one provider, so PUT reads better
+         *     than juggling POST-then-PATCH for something with a single instance.
+         */
+        put: operations["put_email_provider"];
+        post?: never;
+        delete: operations["delete_email_provider"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/apps/{app_id}/email-provider/test": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * The button that makes this feature trustworthy: it sends a real message
+         *     through the stored configuration and reports the provider's own error.
+         *     Without it, the first test of a new provider is a real user's registration.
+         */
+        post: operations["test_email_provider"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/v1/apps/{app_id}/members": {
         parameters: {
             query?: never;
@@ -293,6 +334,80 @@ export interface paths {
          *     refreshes — scopes are re-derived at `/v1/auth/refresh` (scopes.rs).
          */
         patch: operations["update_member_role"];
+        trace?: never;
+    };
+    "/v1/apps/{app_id}/webhooks": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get: operations["list_webhooks"];
+        put?: never;
+        post: operations["create_webhook"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/apps/{app_id}/webhooks/{id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get: operations["get_webhook"];
+        put?: never;
+        post?: never;
+        delete: operations["delete_webhook"];
+        options?: never;
+        head?: never;
+        patch: operations["update_webhook"];
+        trace?: never;
+    };
+    "/v1/apps/{app_id}/webhooks/{id}/deliveries": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * The delivery log the plan asks for. This is what turns "the webhook isn't
+         *     working" into a specific answer: which event, how many attempts, what the
+         *     receiver actually said.
+         */
+        get: operations["list_webhook_deliveries"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/apps/{app_id}/webhooks/{id}/deliveries/{delivery_id}/redeliver": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Re-queues a delivery that gave up. The receiver was down for an hour and
+         *     the app still needs the event — without this the only recovery is reading
+         *     the events API and reconciling by hand.
+         */
+        post: operations["redeliver_webhook_delivery"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
         trace?: never;
     };
     "/v1/apps/{id}": {
@@ -980,6 +1095,20 @@ export interface components {
             mode: components["schemas"]["IdentityMode"];
             name: string;
         };
+        CreateWebhookRequest: {
+            description?: string | null;
+            /** @description Omit or leave empty to receive every event. */
+            event_types?: string[];
+            url: string;
+        };
+        /**
+         * @description The signing secret is returned **once**, at creation. Same contract as an
+         *     API key: it exists to be stored by the receiver, and a secret the platform
+         *     can re-read is one an operator can leak later.
+         */
+        CreatedWebhookResponse: components["schemas"]["WebhookResponse"] & {
+            secret: string;
+        };
         DeleteAccountRequest: {
             /**
              * @description Required whenever the account has a password. A valid access token is
@@ -987,12 +1116,66 @@ export interface components {
              */
             password?: string | null;
         };
+        DeliveriesQuery: {
+            /** Format: int64 */
+            limit?: number | null;
+            /** @description `pending`, `sending`, `delivered` or `failed`. */
+            status?: string | null;
+        };
+        DeliveryResponse: {
+            /** Format: int32 */
+            attempts: number;
+            /** Format: date-time */
+            created_at: string;
+            /** Format: date-time */
+            delivered_at?: string | null;
+            event_type: string;
+            /** Format: uuid */
+            id: string;
+            last_error?: string | null;
+            /** Format: date-time */
+            next_attempt_at: string;
+            payload: unknown;
+            /** Format: int32 */
+            response_status?: number | null;
+            status: string;
+        };
         EcosystemResponse: {
             /** Format: uuid */
             id: string;
             is_system: boolean;
             name: string;
             status: string;
+        };
+        EmailProviderResponse: {
+            /** Format: uuid */
+            app_id: string;
+            from_address: string;
+            from_name?: string | null;
+            /**
+             * @description Whether a credential is stored. The credential itself is never
+             *     returned, in any shape — not masked, not truncated.
+             */
+            has_secret: boolean;
+            kind: string;
+            /**
+             * @description Last delivery failure verbatim from the provider ("domain is not
+             *     verified", "invalid API key"). Without it a dead provider is invisible
+             *     until users start complaining.
+             */
+            last_error?: string | null;
+            /** Format: date-time */
+            last_error_at?: string | null;
+            /** Format: date-time */
+            last_success_at?: string | null;
+            smtp_host?: string | null;
+            /** Format: int32 */
+            smtp_port?: number | null;
+            smtp_tls?: string | null;
+            smtp_username?: string | null;
+            status: string;
+            /** Format: date-time */
+            updated_at: string;
         };
         EventRecord: {
             /** Format: uuid */
@@ -1235,6 +1418,24 @@ export interface components {
             /** @description JSON object shallow-merged into the membership's `local_metadata`. */
             metadata: unknown;
         };
+        PutEmailProviderRequest: {
+            from_address: string;
+            from_name?: string | null;
+            /** @description `smtp` or `resend`. */
+            kind: string;
+            /**
+             * @description API key or SMTP password. Omit on update to keep the stored one —
+             *     otherwise editing the From address would silently wipe the credential.
+             */
+            secret?: string | null;
+            smtp_host?: string | null;
+            /** Format: int32 */
+            smtp_port?: number | null;
+            /** @description `starttls` (default), `implicit` or `none`. */
+            smtp_tls?: string | null;
+            smtp_username?: string | null;
+            status?: string | null;
+        };
         RefreshRequest: {
             refresh_token: string;
         };
@@ -1312,6 +1513,12 @@ export interface components {
             status: components["schemas"]["SessionStatus"];
             user_agent?: string | null;
         };
+        TestEmailRequest: {
+            to: string;
+        };
+        TestEmailResponse: {
+            delivered: boolean;
+        };
         TokenResponse: {
             access_token: string;
             /** Format: int64 */
@@ -1339,6 +1546,16 @@ export interface components {
              *     recorded in the event; cleared when reactivating.
              */
             reason?: string | null;
+        };
+        UpdateWebhookRequest: {
+            description?: string | null;
+            event_types?: string[] | null;
+            /**
+             * @description `active` or `disabled`. Disabling stops the fan-out without losing the
+             *     endpoint's history.
+             */
+            status?: string | null;
+            url?: string | null;
         };
         UserMetadataResponse: {
             metadata: unknown;
@@ -1368,6 +1585,24 @@ export interface components {
         };
         VerifyEmailRequest: {
             token: string;
+        };
+        WebhookResponse: {
+            /** Format: uuid */
+            app_id: string;
+            /** Format: date-time */
+            created_at: string;
+            description?: string | null;
+            /** @description Empty means every event. */
+            event_types: string[];
+            /** Format: uuid */
+            id: string;
+            last_error?: string | null;
+            /** Format: date-time */
+            last_error_at?: string | null;
+            /** Format: date-time */
+            last_success_at?: string | null;
+            status: string;
+            url: string;
         };
     };
     responses: never;
@@ -2021,6 +2256,174 @@ export interface operations {
             };
         };
     };
+    get_email_provider: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description App ID */
+                app_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description The app's email provider */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["EmailProviderResponse"];
+                };
+            };
+            /** @description Not platform admin */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description App has no provider of its own (it uses the global one) */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    put_email_provider: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description App ID */
+                app_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["PutEmailProviderRequest"];
+            };
+        };
+        responses: {
+            /** @description Provider stored */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["EmailProviderResponse"];
+                };
+            };
+            /** @description Invalid provider configuration, or no encryption key configured */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Not platform admin */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description App not found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    delete_email_provider: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description App ID */
+                app_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Provider removed; the app falls back to the global mailer */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Not platform admin */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description App has no provider of its own */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    test_email_provider: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description App ID */
+                app_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["TestEmailRequest"];
+            };
+        };
+        responses: {
+            /** @description Test message delivered */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["TestEmailResponse"];
+                };
+            };
+            /** @description Invalid address, or the provider rejected the message (error included) */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Not platform admin */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description App has no provider of its own */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
     list_app_members: {
         parameters: {
             query?: never;
@@ -2133,6 +2536,294 @@ export interface operations {
             };
             /** @description Would leave the app without an app_admin */
             409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    list_webhooks: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description App ID */
+                app_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Webhooks of the app */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["WebhookResponse"][];
+                };
+            };
+            /** @description Not authorized for this app */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    create_webhook: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description App ID */
+                app_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["CreateWebhookRequest"];
+            };
+        };
+        responses: {
+            /** @description Webhook created — `secret` is shown only here */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["CreatedWebhookResponse"];
+                };
+            };
+            /** @description Invalid URL or too many event types, or no encryption key configured */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Not platform admin, and not app:user_manage on this app */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description App not found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    get_webhook: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description App ID */
+                app_id: string;
+                /** @description Webhook ID */
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description The webhook */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["WebhookResponse"];
+                };
+            };
+            /** @description Not authorized for this app */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description No such webhook in this app */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    delete_webhook: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description App ID */
+                app_id: string;
+                /** @description Webhook ID */
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Webhook and its delivery log removed */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Not authorized for this app */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description No such webhook in this app */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    update_webhook: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description App ID */
+                app_id: string;
+                /** @description Webhook ID */
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["UpdateWebhookRequest"];
+            };
+        };
+        responses: {
+            /** @description Webhook updated */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["WebhookResponse"];
+                };
+            };
+            /** @description Invalid URL, status or event types */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Not authorized for this app */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description No such webhook in this app */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    list_webhook_deliveries: {
+        parameters: {
+            query?: {
+                /** @description `pending`, `sending`, `delivered` or `failed`. */
+                status?: string | null;
+                limit?: number | null;
+            };
+            header?: never;
+            path: {
+                /** @description App ID */
+                app_id: string;
+                /** @description Webhook ID */
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Delivery attempts, newest first */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["DeliveryResponse"][];
+                };
+            };
+            /** @description Not authorized for this app */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description No such webhook in this app */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    redeliver_webhook_delivery: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description App ID */
+                app_id: string;
+                /** @description Webhook ID */
+                id: string;
+                /** @description Delivery ID */
+                delivery_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Delivery re-queued */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["DeliveryResponse"];
+                };
+            };
+            /** @description Not authorized for this app */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description No such delivery for this webhook */
+            404: {
                 headers: {
                     [name: string]: unknown;
                 };
