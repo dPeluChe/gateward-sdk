@@ -2,40 +2,34 @@
 
 > Tracking activo del SDK. Uso en el [README](../README.md), decisiones de
 > diseño en [ARCHITECTURE/SESSION.md](./ARCHITECTURE/SESSION.md), integración
-> en [GUIDES/MIGRATION.md](./GUIDES/MIGRATION.md).
+> en [GUIDES/MIGRATION.md](./GUIDES/MIGRATION.md). Lo cerrado se archiva por mes
+> en [TASK_COMPLETED/](./TASK_COMPLETED/).
 
 ---
 
-## Estado `updated: 2026-08-03`
+## Estado `updated: 2026-09-05`
 
-Superficie de cliente/integrador **completa contra el contrato**: auth, perfil
-propio, password, sesiones, roles de app, eventos y verificación de JWT. Lo no
-cubierto es admin/control-plane, que por diseño vive en el dashboard.
+Superficie de cliente/integrador **completa contra el contrato** del Core (45 paths,
+regenerado en #23): auth, perfil propio, password, email, borrado de cuenta, sesiones,
+roles de app, config pública con guarda de environment, eventos y verificación de JWT.
+Lo no cubierto es admin/control-plane, que por diseño vive en el dashboard.
 
-`main`: PRs #9-#16, 108 tests, 4 entries (`index`, `server`, `react`, `next`).
+`main`: PRs #9–#23, 129 tests, 4 entries (`index`, `server`, `react`, `next`). CI verde
+en Node 20 y 22 (runners de GitHub: el repo es público, los minutos son gratis).
 
-`main` en CI verde sobre Node 20 y 22.
+El demo (`gateward-sdk-demo` #2) ejercita **toda** la superficie, incluida la guarda de
+environment, el cambio de email en dos pasos y el borrado de cuenta.
 
-Próximo paso: **publicar** y que la app piloto lo aplique. Su feedback manda
-sobre el resto del backlog.
-
+Próximo paso: **publicar** (DIST-001, faltan la org de npm y el token) y que la app
+piloto lo aplique. Su feedback manda sobre el resto del backlog.
 ---
 
 ## Priority 1 — Desbloquear la primera integración
 
 ### DIST-001: Distribución pública `added: 2026-08-03`
-- [x] Paquete publicable: MIT, `publishConfig` con provenance, metadata de repo.
-- [x] CHANGELOG + política SemVer (`GUIDES/RELEASING.md`).
-- [x] Workflow de release por tag, con guarda tag/package.json.
 - [ ] Crear la org `gateward` en npm y el secret `NPM_TOKEN`.
 - [ ] Primer `npm publish` — lo corre una persona, no CI (irreversible).
-
-### DEMO-001: Poner el demo al día `added: 2026-08-03`
-- [ ] `gateward-sdk-demo` está atrás de la superficie actual: no ejercita
-  `updateProfile`, `changePassword`, `revokeAllSessions`, `listMembers` /
-  `setMemberRole`, ni el auto-login del register.
-- [ ] Es la referencia de integración que se lee antes que la doc escrita, así
-  que vale más que ella.
+- Lo ya hecho (paquete publicable, CHANGELOG, workflow por tag) está en `TASK_COMPLETED/2609.md`.
 
 ### PILOT-001: Primera integración real `added: 2026-08-03`
 - [ ] La aplica el equipo de la app piloto; nosotros respondemos su feedback.
@@ -61,9 +55,10 @@ sobre el resto del backlog.
 ### E2E-001: Validar contra un Core desplegado `added: 2026-08-03`
 - [ ] Todo el suite corre contra stubs. Falta ejercitar el ciclo completo contra
   un Core real con dos apps: una con `require_email_verification` y otra sin.
-- [ ] **Bloqueado por el redespliegue de prod**, que aún no tiene ninguno de los
-  diez PRs. Al desplegar, `JWT_ISSUER` tiene que ser la URL pública o el
-  discovery OIDC no sirve — y el error se ve del lado del cliente, no del server.
+- [ ] **Bloqueado por prod**: hoy no existe el recurso en Coolify (Core DEPLOY-006).
+  Al desplegar, `JWT_ISSUER` tiene que ser la URL pública o el discovery OIDC no
+  sirve — y el error se ve del lado del cliente, no del server. La guía del Core
+  `GUIDES/INTEGRATION_TESTING.md` trae el checklist para este item.
 
 ---
 
@@ -73,8 +68,8 @@ sobre el resto del backlog.
 SELF-001, APP-POLICY-001, ROLE-001, OIDC-001, HASH-IMPORT-001, SELF-DELETE-001,
 REGISTER-PROFILE-001, EMAIL-CHANGE-001, APP-CONFIG-001 y ABUSE-TENANT-001.
 
-Lo único que falta del lado del Core es **operativo**: redesplegar prod, que
-todavía corre sin ninguno de esos cambios.
+Lo único que falta del lado del Core es **operativo**: crear el recurso de prod en
+Coolify desde la imagen de GHCR (`v0.1.0` ya publicada).
 
 ---
 
