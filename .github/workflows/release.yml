@@ -6,9 +6,16 @@ on:
   push:
     tags: ["v*.*.*"]
 
+# Un run por tag; nunca se cancela una publicación en curso.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: false
+
 jobs:
   publish:
-    runs-on: ubuntu-latest
+    # sbk-small: sin Docker. El provenance OIDC no depende del runner.
+    runs-on: [self-hosted, sbk-small]
+    timeout-minutes: 15
     permissions:
       contents: read
       # Requerido para el provenance de npm (attestation firmada por OIDC).
@@ -18,10 +25,12 @@ jobs:
       - uses: pnpm/action-setup@v4
         with:
           version: 10
-      - uses: actions/setup-node@v4
+          cache: false
+      # Runner efímero: un cache solo subiría a GitHub en cada run; queda apagado.
+      - uses: actions/setup-node@v5
         with:
           node-version: 22
-          cache: pnpm
+          package-manager-cache: false
           registry-url: https://registry.npmjs.org
 
       - run: pnpm install --frozen-lockfile

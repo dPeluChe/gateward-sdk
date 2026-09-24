@@ -5,9 +5,20 @@ on:
     branches: [main]
   pull_request:
 
+# A newer push to the same PR cancels the run it made obsolete; main keeps
+# every run. Strongback holds a couple of runner slots per repo, so the two
+# matrix legs may run one after the other.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
 jobs:
   build:
-    runs-on: ubuntu-latest
+    # sbk-small: no Docker needed. Tighten timeout to ~3x p95 after a few runs.
+    # A PR from a fork runs on GitHub-hosted: untrusted code never reaches
+    # the self-hosted pool. Everything else (own branches, main) goes to Strongback.
+    runs-on: ${{ github.event.pull_request.head.repo.fork && 'ubuntu-latest' || fromJSON('["self-hosted","sbk-small"]') }}
+    timeout-minutes: 15
     strategy:
       fail-fast: false
       # Both ends of the `engines` range the package claims to support.
@@ -18,10 +29,13 @@ jobs:
       - uses: pnpm/action-setup@v4
         with:
           version: 10
-      - uses: actions/setup-node@v4
+          cache: false
+      # Ephemeral runner: a dependency cache would only upload to GitHub on
+      # every run, so it stays off explicitly.
+      - uses: actions/setup-node@v5
         with:
           node-version: ${{ matrix.node }}
-          cache: pnpm
+          package-manager-cache: false
       - run: pnpm install --frozen-lockfile
       - run: pnpm typecheck
       - run: pnpm test
