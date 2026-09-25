@@ -2,7 +2,7 @@ name: ci
 
 on:
   push:
-    branches: [main]
+    branches: [main, prod]
   pull_request:
 
 # A newer push to the same PR cancels the run it made obsolete; main keeps
