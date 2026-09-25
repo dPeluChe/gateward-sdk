@@ -62,9 +62,13 @@ describe("GatewardAuth", () => {
   });
 
   it("getAccessToken refreshes when the token is near expiry", async () => {
+    // Captured once: re-calling past()/future() in the asserts flakes when the
+    // clock crosses a second boundary mid-test.
+    const expired = past();
+    const fresh = future();
     const { fetch, calls } = stubFetch([
-      tokenResponse(past()), // login → already-expired access token
-      tokenResponse(future()), // refresh → fresh token
+      tokenResponse(expired), // login → already-expired access token
+      tokenResponse(fresh), // refresh → fresh token
     ]);
     const auth = new GatewardAuth({ baseUrl: BASE, appId: APP, fetch });
     const loginSet = await auth.login("a@b.co", "pw");
@@ -72,10 +76,10 @@ describe("GatewardAuth", () => {
     const token = await auth.getAccessToken();
 
     expect(calls[1]!.url).toBe(`${BASE}/v1/auth/refresh`);
-    expect(calls[1]!.body).toEqual({ refresh_token: `refresh-${past()}` });
+    expect(calls[1]!.body).toEqual({ refresh_token: `refresh-${expired}` });
     // Returned the freshly-refreshed token, not the expired login one.
     expect(token).not.toBe(loginSet.accessToken);
-    expect(token).toBe(fakeAccessToken(future()));
+    expect(token).toBe(fakeAccessToken(fresh));
   });
 
   it("coalesces concurrent refreshes into a single request", async () => {
